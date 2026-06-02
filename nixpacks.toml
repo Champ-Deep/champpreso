@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_24"]
+
+[phases.install]
+cmds = ["npm ci --omit=optional --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["echo 'No build step required'"]
+
+[start]
+cmd = "node src/cli.js --no-open"
