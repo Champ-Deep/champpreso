@@ -18,9 +18,14 @@ Node 24 or newer is required. Check with `node -v`. If you are on an older Node,
 | Provider | When | How |
 |---|---|---|
 | **OpenRouter** | Default daily driver. One key, many models. | `export OPENROUTER_API_KEY=sk-or-v1-...` then `champpreso`. |
+| **Groq** | Fast lane. 400-800 tok/s Llama tool-calling, cloud-friendly. | `export GROQ_API_KEY=gsk_...; champpreso`. Default model `llama-3.3-70b-versatile` (`GROQ_MODEL` to override). |
+| **Cerebras** | Fastest lane. 2000+ tok/s on wafer-scale silicon. | `export CEREBRAS_API_KEY=csk-...; champpreso`. Default model `llama-3.3-70b` (`CEREBRAS_MODEL` to override). |
 | **Ollama** | Offline, sensitive content, demos with no internet. | `brew install ollama; ollama serve &; ollama pull qwen2.5:14b; export OLLAMA_MODEL=qwen2.5:14b; champpreso`. |
 | **OpenAI** | When you want OpenAI Realtime STT alongside the agent. | `export OPENAI_API_KEY=sk-...; champpreso`. |
 | **Codex** | Free if you already pay for ChatGPT Plus/Pro. | `npm i -g @openai/codex; codex; champpreso`. |
+
+> Deploying to the cloud? See [docs/DEPLOY-RAILWAY-GROQ.md](docs/DEPLOY-RAILWAY-GROQ.md) for the
+> Railway + Groq runbook (and why cloud voice also needs `OPENAI_API_KEY` for STT).
 
 ## OpenRouter setup, step by step
 
