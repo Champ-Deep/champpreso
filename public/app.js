@@ -64,6 +64,9 @@ const OPENAI_TRANSCRIPTION_MODELS = [
   "whisper-1",
 ];
 const MOONSHINE_MODELS = ["tiny", "small", "medium"];
+// Cap the Live Transcript History so long presos don't grow the array unbounded.
+// Mirrors the server-side turnHistory cap in whiteboard-session.js.
+const TRANSCRIPT_HISTORY_LIMIT = 50;
 const MIC_STORAGE_KEY = "champpreso.mic";
 const PANEL_HIDDEN_STORAGE_KEY = "champpreso.panelHidden";
 
@@ -111,9 +114,26 @@ function loadStoredPanelHidden() {
   }
 }
 
+function useExcalidrawThemeSync(apiRef, panelTheme) {
+  React.useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    const theme = panelTheme === "dark" ? "dark" : "light";
+    const viewBackgroundColor = panelTheme === "dark" ? "#14171F" : "#fffdf8";
+    api.updateScene({
+      appState: {
+        theme,
+        viewBackgroundColor,
+      },
+    });
+  }, [panelTheme, apiRef]);
+}
+
 function App() {
+  const apiRef = React.useRef(null);
   const [api, setApi] = React.useState(null);
   const [mode, setMode] = React.useState("staging");
+  const isLive = mode === "live";
   const [listening, setListening] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [presoStarting, setPresoStarting] = React.useState(false);
@@ -170,6 +190,13 @@ function App() {
   // dismisses after a few seconds. Cap at 4 visible to avoid stacking forever.
   const [toasts, setToasts] = React.useState([]);
   const toastIdRef = React.useRef(0);
+  const [transcriptHistory, setTranscriptHistory] = React.useState([]);
+  const transcriptHistoryEndRef = React.useRef(null);
+  React.useEffect(() => {
+    if (transcriptHistoryEndRef.current) {
+      transcriptHistoryEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [transcriptHistory]);
   // v0.12.0: agent thinking status text. Updated from agent tool start/end
   // events so the user can see what the agent is doing in real-time.
   const [agentThinking, setAgentThinking] = React.useState("");
@@ -179,7 +206,6 @@ function App() {
   const [notesAttachFlash, setNotesAttachFlash] = React.useState("");
   const [cost, setCost] = React.useState(null);
   const audioSessionRef = React.useRef(null);
-  const apiRef = React.useRef(null);
   const wsRef = React.useRef(null);
   const modeRef = React.useRef("staging");
   const stagingSceneRef = React.useRef(null);
@@ -191,6 +217,8 @@ function App() {
   const userElementsSyncTimerRef = React.useRef(null);
   const lastSyncedElementsHashRef = React.useRef("");
   const listeningRef = React.useRef(false);
+  const agentStatusRef = React.useRef("idle");
+  agentStatusRef.current = agentStatus;
   // Seed the textarea once from settings, then let the user own it locally so
   // their keystrokes don't fight the WS settings broadcast we trigger on save.
   const agentInstructionsSeededRef = React.useRef(false);
@@ -649,12 +677,8 @@ function App() {
     // Only push user edits to the server while in live mode. In staging the
     // canvas is a client-side scratchpad; the server doesn't need to know.
     if (modeRef.current !== "live") return;
-    // Once listening starts, the agent owns the canvas. Echoing user-elements
-    // back creates an ID-rotation feedback loop: applyScene re-runs
-    // convertToExcalidrawElements, which assigns fresh IDs, which propagate
-    // back via onChange, which break the agent's cache prefix and confuse
-    // line-numbered references. Sync only during the pre-listen window.
-    if (listeningRef.current) return;
+    // Allow user edits while listening, EXCEPT when the agent is actively thinking/processing a turn.
+    if (agentStatusRef.current === "thinking") return;
     clearTimeout(userElementsSyncTimerRef.current);
     userElementsSyncTimerRef.current = setTimeout(() => {
       const ws = wsRef.current;
@@ -693,7 +717,55 @@ function App() {
           clearTimeout(captionTimerRef.current);
           setCaptionText(text);
           captionTimerRef.current = setTimeout(() => setCaptionText(""), 3500);
+          setTranscriptHistory((prev) => {
+            if (prev.length > 0 && prev[prev.length - 1].status === "queued" && prev[prev.length - 1].text === text) {
+              return prev;
+            }
+            return [
+              ...prev,
+              {
+                id: `temp-${Date.now()}-${Math.random()}`,
+                text,
+                status: "queued",
+                timestamp: new Date().toISOString()
+              }
+            ].slice(-TRANSCRIPT_HISTORY_LIMIT);
+          });
         }
+      }
+      if (message.type === "agent:turn-start") {
+        setTranscriptHistory((prev) => {
+          const filtered = prev.filter((item) => item.status !== "queued");
+          return [
+            ...filtered,
+            {
+              id: message.turnId,
+              text: message.transcript,
+              status: "processing",
+              timestamp: message.timestamp
+            }
+          ].slice(-TRANSCRIPT_HISTORY_LIMIT);
+        });
+      }
+      if (message.type === "agent:turn-end") {
+        setTranscriptHistory((prev) => {
+          return prev.map((item) => {
+            if (item.id === message.turnId) {
+              return { ...item, status: "completed" };
+            }
+            return item;
+          });
+        });
+      }
+      if (message.type === "agent:turn-error") {
+        setTranscriptHistory((prev) => {
+          return prev.map((item) => {
+            if (item.id === message.turnId) {
+              return { ...item, status: "failed", error: message.error };
+            }
+            return item;
+          });
+        });
       }
       if (message.type === "agent:status") {
         setAgentStatus(message.status);
@@ -713,9 +785,12 @@ function App() {
         const previousMode = modeRef.current;
         modeRef.current = message.mode;
         setMode(message.mode);
-        if (message.mode === "staging" && previousMode === "live") {
-          // Returning from live: restore the staged canvas the user was last working on.
-          applyScene(stagingSceneRef.current, { recenter: true });
+        if (message.mode === "staging") {
+          setTranscriptHistory([]);
+          if (previousMode === "live") {
+            // Returning from live: restore the staged canvas the user was last working on.
+            applyScene(stagingSceneRef.current, { recenter: true });
+          }
         }
       }
       if (message.type === "whiteboard:update") {
@@ -723,6 +798,8 @@ function App() {
         const isFreshStarter =
           Array.isArray(message.elements) &&
           message.elements.length <= STARTER_ELEMENTS.length + 1;
+        const cleaned = nativeElementsToSkeletonForSync(message.elements ?? []);
+        lastSyncedElementsHashRef.current = JSON.stringify(cleaned);
         applyScene(message.elements, { recenter: isFreshStarter });
       }
       if (message.type === "whiteboard:viewport")
@@ -1055,6 +1132,7 @@ function App() {
         if (listening) await stopListening();
         clearTimeout(captionTimerRef.current);
         setCaptionText("");
+        setTranscriptHistory([]);
         const res = await fetch("/api/session/reset", { method: "POST" });
         if (!res.ok) throw new Error(`Reset failed (${res.status})`);
       }
@@ -1193,7 +1271,6 @@ function App() {
     }
   }
 
-  const isLive = mode === "live";
   const micState = micError ? "error" : listening ? "active" : "idle";
   const agentState = agentError
     ? "error"
@@ -1759,6 +1836,88 @@ function App() {
         }),
       ),
       isLive && cost ? React.createElement(CostCard, { cost }) : null,
+      isLive
+        ? React.createElement(
+            "div",
+            { className: "transcript-history-card", key: "transcript-history" },
+            React.createElement(
+              "div",
+              { className: "th-header" },
+              React.createElement("span", { className: "th-title" }, "Live Transcript History"),
+              transcriptHistory.length > 0
+                ? React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      className: "th-clear",
+                      onClick: () => setTranscriptHistory([]),
+                      title: "Clear history list",
+                    },
+                    "Clear"
+                  )
+                : null
+            ),
+            React.createElement(
+              "div",
+              { className: "th-list" },
+              transcriptHistory.length === 0
+                ? React.createElement(
+                    "div",
+                    { className: "th-empty" },
+                    "No spoken turns processed yet. Start talking to see history."
+                  )
+                : React.createElement(
+                    "ul",
+                    null,
+                    ...transcriptHistory.map((item) => {
+                      let statusIcon = "⚪";
+                      let statusClass = "queued";
+                      if (item.status === "processing") {
+                        statusIcon = "⏳";
+                        statusClass = "processing";
+                      } else if (item.status === "completed") {
+                        statusIcon = "✅";
+                        statusClass = "completed";
+                      } else if (item.status === "failed") {
+                        statusIcon = "❌";
+                        statusClass = "failed";
+                      }
+                      return React.createElement(
+                        "li",
+                        { key: item.id, className: `th-item ${statusClass}` },
+                        React.createElement(
+                          "div",
+                          { className: "th-item-header" },
+                          React.createElement(
+                            "span",
+                            { className: "th-status-badge", title: item.status },
+                            statusIcon
+                          ),
+                          React.createElement(
+                            "span",
+                            { className: "th-time" },
+                            new Date(item.timestamp).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })
+                          )
+                        ),
+                        React.createElement("div", { className: "th-text" }, item.text),
+                        item.error
+                          ? React.createElement(
+                              "div",
+                              { className: "th-error-msg" },
+                              item.error
+                            )
+                          : null
+                      );
+                    }),
+                    React.createElement("div", { ref: transcriptHistoryEndRef })
+                  )
+            )
+          )
+        : null,
       mode === "staging"
         ? React.createElement(
             "div",

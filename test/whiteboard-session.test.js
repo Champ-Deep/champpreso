@@ -315,3 +315,44 @@ test("startWarmupLoop is a no-op if called while already running", async () => {
   const warmupBroadcasts = broadcasts.filter((m) => m.type === "warmup");
   assert.equal(warmupBroadcasts.at(-1).state, "confirmed");
 });
+
+test("runTurn broadcasts turn start, end, and error events to clients", async () => {
+  const broadcasts = [];
+  const session = createWhiteboardSession({
+    options: {},
+    wss: {
+      clients: new Set([
+        { readyState: 1, send: (m) => broadcasts.push(JSON.parse(m)) },
+      ]),
+    },
+    runAgent: async ({ transcript }) => {
+      if (transcript === "fail") throw new Error("mock agent failure");
+    },
+  });
+  session.mode = "live";
+
+  // 1. Test successful run
+  await session.queueTranscript("hello world");
+  await session.idle();
+
+  const startMsg = broadcasts.find((m) => m.type === "agent:turn-start");
+  const endMsg = broadcasts.find((m) => m.type === "agent:turn-end");
+  assert.ok(startMsg);
+  assert.equal(startMsg.transcript, "hello world");
+  assert.ok(startMsg.turnId);
+  assert.ok(endMsg);
+  assert.equal(endMsg.transcript, "hello world");
+  assert.equal(endMsg.turnId, startMsg.turnId);
+
+  // 2. Test failing run
+  broadcasts.length = 0; // clear
+  await session.queueTranscript("fail");
+  await session.idle();
+
+  const errorMsg = broadcasts.find((m) => m.type === "agent:turn-error");
+  assert.ok(errorMsg);
+  assert.equal(errorMsg.transcript, "fail");
+  assert.equal(errorMsg.error, "mock agent failure");
+  assert.ok(errorMsg.turnId);
+});
+

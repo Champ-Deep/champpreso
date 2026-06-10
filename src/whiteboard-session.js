@@ -37,6 +37,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   const state = {
     mode: "staging",
     elements: seedElements(),
+    turnIdCounter: 0,
     agentHistory: [],
     agentStatus: "idle",
     agentBusy: false,
@@ -131,13 +132,18 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
       if (!mySession.active) return;
       state.agentBusy = true;
       publishAgentStatus();
+      state.turnIdCounter = (state.turnIdCounter || 0) + 1;
+      const turnId = `turn-${state.turnIdCounter}-${Date.now()}`;
+      broadcast(wss, { type: "agent:turn-start", turnId, transcript, timestamp: new Date().toISOString() });
       options.onAgentEvent?.({ type: "turn:start", transcript, timestamp: new Date().toISOString() });
       try {
         await runAgent({ transcript, state, wss, options });
+        broadcast(wss, { type: "agent:turn-end", turnId, transcript, timestamp: new Date().toISOString() });
         options.onAgentEvent?.({ type: "turn:end", transcript, timestamp: new Date().toISOString() });
       } catch (error) {
         console.error("Whiteboard agent failed:", error);
         broadcast(wss, { type: "error", message: `Whiteboard agent failed: ${error.message}` });
+        broadcast(wss, { type: "agent:turn-error", turnId, transcript, error: error.message, timestamp: new Date().toISOString() });
         options.onAgentEvent?.({ type: "turn:error", transcript, error: error.message, timestamp: new Date().toISOString() });
       } finally {
         state.agentBusy = false;
