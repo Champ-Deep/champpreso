@@ -9,7 +9,7 @@ test("starter scene uses explicit text instead of a clipped bound label", () => 
   const hint = STARTER_ELEMENTS.find((element) => element.id === "starter-hint");
 
   assert.equal(title.type, "text");
-  assert.equal(title.text, "AutoPreso");
+  assert.equal(title.text, "ChampPreso");
   assert.ok(title.width >= estimateHandwrittenWidth(title.text, title.fontSize));
   assert.equal(card.type, "rectangle");
   assert.equal(card.label, undefined);

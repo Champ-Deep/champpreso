@@ -8,6 +8,7 @@ test("parseCliArgs returns safe defaults", () => {
     host: "127.0.0.1",
     port: 3210,
     openBrowser: true,
+    cloud: false,
   });
 });
 
@@ -22,15 +23,13 @@ test("parseCliArgs accepts --no-open", () => {
       host: "127.0.0.1",
       port: 4567,
       openBrowser: false,
+      cloud: false,
     },
   );
 });
 
-test("parseCliArgs rejects --host because the server is loopback-only", () => {
-  assert.throws(
-    () => parseCliArgs(["--host", "0.0.0.0"], {}),
-    /Unknown argument "--host"/,
-  );
+test("parseCliArgs accepts --host", () => {
+  assert.equal(parseCliArgs(["--host", "0.0.0.0"], {}).host, "0.0.0.0");
 });
 
 test("parseCliArgs rejects unknown flags so model selection only happens in the UI", () => {
@@ -42,11 +41,8 @@ test("parseCliArgs rejects unknown flags so model selection only happens in the 
   }
 });
 
-test("parseCliArgs rejects --port because PORT is the only port configuration", () => {
-  assert.throws(
-    () => parseCliArgs(["--port", "4567"], {}),
-    /Unknown argument "--port"/,
-  );
+test("parseCliArgs accepts --port", () => {
+  assert.equal(parseCliArgs(["--port", "4567"], {}).port, 4567);
 });
 
 test("parseCliArgs rejects invalid PORT", () => {

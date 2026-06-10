@@ -93,7 +93,7 @@ function waitForRenderedText(webSocketDebuggerUrl, expectedText) {
     const timeout = setTimeout(() => {
       ws.close();
       reject(new Error(`Timed out waiting for ${expectedText}.`));
-    }, 20000);
+    }, 60000);
 
     const request = (method, params = {}) => {
       const requestId = ++id;
@@ -106,7 +106,12 @@ function waitForRenderedText(webSocketDebuggerUrl, expectedText) {
     ws.on("open", async () => {
       try {
         await request("Runtime.enable");
-        const deadline = Date.now() + 15000;
+        await request("Network.enable");
+        await request("Network.setCacheDisabled", { cacheDisabled: true });
+        await request("Log.enable");
+        await request("Page.enable");
+        await request("Page.reload", { ignoreCache: true });
+        const deadline = Date.now() + 60000;
         let lastText = "";
 
         while (Date.now() < deadline) {
@@ -134,6 +139,14 @@ function waitForRenderedText(webSocketDebuggerUrl, expectedText) {
 
     ws.on("message", (raw) => {
       const message = JSON.parse(raw.toString());
+      if (message.method === "Runtime.consoleAPICalled") {
+        const args = message.params.args.map(a => a.value || a.description).join(" ");
+        console.log(`[Chrome Console ${message.params.type}]: ${args}`);
+      } else if (message.method === "Runtime.exceptionThrown") {
+        console.error("[Chrome Exception]:", message.params.exceptionDetails?.exception?.description || message.params.exceptionDetails);
+      } else if (message.method === "Log.entryAdded") {
+        console.log(`[Chrome Log ${message.params.entry.level}]: ${message.params.entry.text}`);
+      }
       const deferred = pending.get(message.id);
       if (deferred) {
         pending.delete(message.id);

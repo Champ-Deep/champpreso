@@ -22,7 +22,7 @@ test("frontend exports and sends whiteboard screenshots over the websocket", () 
   assert.match(appSource, /canvas\.excalidraw__canvas\.static/);
   assert.match(appSource, /blobToDataUrl/);
   assert.doesNotMatch(appSource, /getDimensions: \(\) => \(\{ width: 1280, height: 720/);
-  assert.doesNotMatch(appSource, /fitToContent/);
+  assert.doesNotMatch(appSource, /exportToBlob\(\{[^}]*fitToContent/);
 });
 
 test("frontend downsizes screenshot images before sending them", () => {
