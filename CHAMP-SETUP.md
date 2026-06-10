@@ -24,8 +24,8 @@ Node 24 or newer is required. Check with `node -v`. If you are on an older Node,
 | **OpenAI** | When you want OpenAI Realtime STT alongside the agent. | `export OPENAI_API_KEY=sk-...; champpreso`. |
 | **Codex** | Free if you already pay for ChatGPT Plus/Pro. | `npm i -g @openai/codex; codex; champpreso`. |
 
-> Deploying to the cloud? See [docs/DEPLOY-RAILWAY-GROQ.md](docs/DEPLOY-RAILWAY-GROQ.md) for the
-> Railway + Groq runbook (and why cloud voice also needs `OPENAI_API_KEY` for STT).
+> Deploying to the cloud? See [docs/DEPLOY-RAILWAY.md](docs/DEPLOY-RAILWAY.md) for the Railway +
+> OpenRouter runbook (and why cloud voice also needs `OPENAI_API_KEY` for STT).
 
 ## OpenRouter setup, step by step
 
