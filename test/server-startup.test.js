@@ -53,6 +53,39 @@ test("startServer waits for Moonshine readiness before listening", async () => {
   assert.equal(closed, true);
 });
 
+test("startServer still listens when transcription init fails (e.g. Moonshine unavailable on Linux)", async () => {
+  const progressMessages = [];
+  const { httpServer, url } = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    moonshineModel: "medium",
+    openaiApiKey: "test",
+    onStatus: (message) => progressMessages.push(message),
+    createTranscription: () => ({
+      ready: async () => {
+        throw new Error("Moonshine local transcription is currently available for macOS arm64 and x64.");
+      },
+      sendAudio: () => {},
+      stop: () => {},
+      close: () => {},
+    }),
+  });
+
+  try {
+    // The server must come up even though the STT provider could not initialize -
+    // this is the cloud/Linux case where the Moonshine binary is absent. The agent
+    // still works; only voice input is unavailable until a compatible STT is set.
+    const res = await fetch(url + "/api/config");
+    assert.equal(res.status, 200);
+    assert.ok(
+      progressMessages.some((message) => /unavailable/i.test(message)),
+      `expected a degraded STT status message, got ${JSON.stringify(progressMessages)}`,
+    );
+  } finally {
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
+});
+
 test("websocket clients receive the current agent status on connect", async () => {
   const { httpServer, url } = await startServer({
     host: "127.0.0.1",

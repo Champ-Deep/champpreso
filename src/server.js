@@ -382,15 +382,30 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     const factory = pickFactory(settings);
     label = newLabel;
     options.onStatus?.(`Preparing ${label} transcription model...`);
-    current = factory({
-      sendTranscript,
-      queueTranscript,
-      options: factoryOptions,
-      env: factoryOptions.env,
-    });
-    if (hasSessionContext) current.setSessionContext?.(sessionContext);
-    await current.ready();
-    options.onStatus?.(`${label} transcription model ready.`);
+    // Initialize the provider but never let a failed STT take down the server.
+    // On Linux/cloud the Moonshine sidecar binary is absent (it ships only for
+    // macOS), so ready() rejects. We must still start listening so the agent
+    // (e.g. OpenRouter) works and the healthcheck passes; voice input simply
+    // stays disabled until a compatible STT provider is configured.
+    let next = null;
+    try {
+      next = factory({
+        sendTranscript,
+        queueTranscript,
+        options: factoryOptions,
+        env: factoryOptions.env,
+      });
+      if (hasSessionContext) next.setSessionContext?.(sessionContext);
+      await next.ready();
+      current = next;
+      options.onStatus?.(`${label} transcription model ready.`);
+    } catch (error) {
+      try { next?.close?.(); } catch { /* best-effort cleanup */ }
+      current = null;
+      options.onStatus?.(
+        `${label} transcription unavailable: ${error.message} Voice input is disabled until a compatible speech-to-text provider is configured.`,
+      );
+    }
   }
 
   await applyCurrent();
