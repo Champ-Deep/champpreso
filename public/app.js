@@ -142,6 +142,12 @@ function App() {
     React.useState("loading");
   const [settings, setSettings] = React.useState(null);
   const [captionText, setCaptionText] = React.useState("");
+  // v0.15.0: scoped editing. Track the live Excalidraw selection so the
+  // "Edit selected" bar can appear, and hold the typed instruction.
+  const [selectedCount, setSelectedCount] = React.useState(0);
+  const selectedIdsRef = React.useRef([]);
+  const [scopedEditText, setScopedEditText] = React.useState("");
+  const [scopedEditSending, setScopedEditSending] = React.useState(false);
   const [error, setError] = React.useState("");
   const [micError, setMicError] = React.useState(false);
   const [agentError, setAgentError] = React.useState(false);
@@ -464,6 +470,40 @@ function App() {
     }
   }
 
+  // v0.15.0: scoped edit. Send the current selection + a typed instruction so
+  // the agent edits ONLY those elements. Reads the live selection via the
+  // Excalidraw API (authoritative at click time, not the throttled ref).
+  async function sendScopedEditCommand(instruction) {
+    const text = String(instruction ?? "").trim();
+    if (!text) return;
+    const api = apiRef.current;
+    const appState = api?.getAppState?.() || {};
+    const sel = appState.selectedElementIds || {};
+    const selectedIds = Object.keys(sel).filter((id) => sel[id]);
+    if (selectedIds.length === 0) {
+      setError("Select one or more elements first, then describe the edit.");
+      return;
+    }
+    setScopedEditSending(true);
+    try {
+      const res = await fetch("/api/preso/scoped-edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectedIds, instruction: text }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || "Scoped edit failed.");
+        return;
+      }
+      setScopedEditText("");
+    } catch (e) {
+      setError(e.message || "Scoped edit failed.");
+    } finally {
+      setScopedEditSending(false);
+    }
+  }
+
   // v0.8.0: Export the canvas. Three formats. Each pulls from the Excalidraw
   // scene and triggers a download in the user's browser.
   async function exportCanvas(format) {
@@ -673,7 +713,15 @@ function App() {
     } catch {}
   }
 
-  function handleExcalidrawChange(elements) {
+  function handleExcalidrawChange(elements, appState) {
+    // v0.15.0: track the current selection (cheap; only re-render on count
+    // change) so the "Edit selected" scoped-edit bar can appear in live mode.
+    const sel = appState?.selectedElementIds || {};
+    const ids = Object.keys(sel).filter((id) => sel[id]);
+    if (ids.length !== selectedIdsRef.current.length || ids.some((id, i) => id !== selectedIdsRef.current[i])) {
+      selectedIdsRef.current = ids;
+      setSelectedCount(ids.length);
+    }
     // Only push user edits to the server while in live mode. In staging the
     // canvas is a client-side scratchpad; the server doesn't need to know.
     if (modeRef.current !== "live") return;
@@ -1426,6 +1474,45 @@ function App() {
         },
         onChange: handleExcalidrawChange,
       }),
+      // v0.15.0: scoped-edit bar. Appears over the canvas when the user has a
+      // selection in live mode. Type an instruction -> the agent edits ONLY the
+      // selected elements. Works with zero voice.
+      isLive && selectedCount > 0
+        ? React.createElement(
+            "div",
+            { className: "scoped-edit-bar", role: "group", "aria-label": "Edit selected elements" },
+            React.createElement(
+              "span",
+              { className: "se-count" },
+              `✏️ ${selectedCount} selected`,
+            ),
+            React.createElement("input", {
+              className: "se-input",
+              type: "text",
+              value: scopedEditText,
+              placeholder: "Describe the edit for these…",
+              disabled: scopedEditSending,
+              "aria-label": "Edit instruction for the selected elements",
+              onChange: (e) => setScopedEditText(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendScopedEditCommand(scopedEditText);
+                }
+              },
+            }),
+            React.createElement(
+              "button",
+              {
+                className: "se-send",
+                type: "button",
+                disabled: scopedEditSending || !scopedEditText.trim(),
+                onClick: () => sendScopedEditCommand(scopedEditText),
+              },
+              scopedEditSending ? "Sending…" : "Edit",
+            ),
+          )
+        : null,
       isLive && pendingQuestion
         ? React.createElement(QuestionCard, {
             question: pendingQuestion,

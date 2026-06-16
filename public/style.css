@@ -2575,3 +2575,79 @@ button:disabled {
   background: color-mix(in srgb, var(--champ-slate) 50%, #b91c1c);
 }
 
+/* v0.15.0: scoped-edit bar. Floats over the canvas when elements are selected
+   in live mode; lets the user type an instruction the agent applies to ONLY
+   those elements. */
+.scoped-edit-bar {
+  position: absolute;
+  bottom: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(620px, calc(100% - 48px));
+  width: max-content;
+  padding: 8px 10px 8px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(11, 13, 18, 0.12);
+  border-radius: var(--r-full);
+  box-shadow: 0 8px 28px rgba(11, 13, 18, 0.18);
+  z-index: 36;
+  animation: se-rise 140ms ease-out;
+}
+
+@keyframes se-rise {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.scoped-edit-bar .se-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--champ-ember-deep);
+  white-space: nowrap;
+}
+
+.scoped-edit-bar .se-input {
+  flex: 1 1 320px;
+  min-width: 200px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #1A1A1A;
+  padding: 4px 2px;
+}
+
+.scoped-edit-bar .se-input::placeholder { color: rgba(11, 13, 18, 0.42); }
+
+.scoped-edit-bar .se-send {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--r-full);
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--champ-ember);
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.scoped-edit-bar .se-send:hover:not(:disabled) { background: var(--champ-ember-glow); }
+.scoped-edit-bar .se-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Dark panel theme */
+.shell[data-panel-theme="dark"] .scoped-edit-bar {
+  background: color-mix(in srgb, var(--champ-slate) 92%, #000);
+  border-color: var(--border-default);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+.shell[data-panel-theme="dark"] .scoped-edit-bar .se-count { color: var(--champ-ember-glow); }
+.shell[data-panel-theme="dark"] .scoped-edit-bar .se-input { color: #F4F5F7; }
+.shell[data-panel-theme="dark"] .scoped-edit-bar .se-input::placeholder { color: rgba(244, 245, 247, 0.42); }
+
