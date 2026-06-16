@@ -86,6 +86,34 @@ test("runTurn skips runAgent when the session ended while waiting on warmup", as
   assert.deepEqual(ranWith, [], "stale runTurn must not invoke runAgent");
 });
 
+test("runTurn proceeds after the warmup cap even if warmup never resolves", async () => {
+  const ranWith = [];
+  let cancelledWarmup = false;
+  const session = createWhiteboardSession({
+    options: { firstTurnWarmupCapMs: 30 },
+    wss: { clients: new Set() },
+    runAgent: async ({ transcript }) => {
+      ranWith.push(transcript);
+    },
+  });
+  session.mode = "live";
+  // Warmup that never settles - the cap must let the turn through anyway.
+  session.warmupPromise = new Promise(() => {});
+  const realCancel = session.cancelWarmup;
+  session.cancelWarmup = () => {
+    cancelledWarmup = true;
+    return realCancel?.();
+  };
+
+  const startedAt = Date.now();
+  session.queueTranscript("ship the first edit");
+  await session.idle();
+
+  assert.deepEqual(ranWith, ["ship the first edit"], "turn should run after the cap");
+  assert.ok(cancelledWarmup, "warmup should be cancelled when the cap elapses");
+  assert.ok(Date.now() - startedAt < 1500, "turn should not wait the full warmup budget");
+});
+
 test("whiteboard session buffers transcript chunks that arrive while the agent is mid-turn", async () => {
   // The queue runs without its own debounce now (delta-quiet upstream owns
   // turn boundaries), so the first chunk fires immediately. While that turn

@@ -473,6 +473,8 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
 }
 
 export async function runWhiteboardAgent({ transcript, state, wss, options, generateTextFn = generateText, streamTextFn = streamText }) {
+  // Wall-clock start so we can report end-to-end turn latency (model:end event).
+  const turnStartedAt = Date.now();
   // Capture the session at turn start. If the user clicks Stop / Back to
   // staging / Reset / Start preso while we're in flight, mySession.active
   // flips to false. Tool execute and the post-turn agentHistory update both
@@ -711,7 +713,8 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     },
   });
   recordAgentCost(state, wss, agentProvider, result);
-  options.onAgentEvent?.({ type: "model:end", transcript, result: summarizeAgentResult(result), timestamp: new Date().toISOString() });
+  const turnDurationMs = Date.now() - turnStartedAt;
+  options.onAgentEvent?.({ type: "model:end", transcript, result: summarizeAgentResult(result), durationMs: turnDurationMs, timestamp: new Date().toISOString() });
 
   // v0.15.0: scoped-edit hard backstop. Restore any unselected element the agent
   // changed or deleted, so a scoped edit can never drift the rest of the canvas.

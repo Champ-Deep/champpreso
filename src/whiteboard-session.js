@@ -32,8 +32,13 @@ export function isTrivialTranscript(text) {
 // delays[N-1] ms before the next). Total budget with 8 attempts: ~120s.
 const DEFAULT_WARMUP_DELAYS = [2000, 4000, 8000, 16000, 30000, 30000, 30000];
 const DEFAULT_WARMUP_MAX_ATTEMPTS = 8;
+// Max time the FIRST real transcript turn will wait on the prompt-cache warmup
+// before proceeding anyway. Prevents a slow/long warmup loop from stalling the
+// first edit. Once warmup resolves, later turns skip the wait entirely.
+const DEFAULT_FIRST_TURN_WARMUP_CAP_MS = 2500;
 
 export function createWhiteboardSession({ options, wss, runAgent }) {
+  const firstTurnWarmupCapMs = options?.firstTurnWarmupCapMs ?? DEFAULT_FIRST_TURN_WARMUP_CAP_MS;
   const state = {
     mode: "staging",
     elements: seedElements(),
@@ -132,8 +137,23 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
       // flips to false and we bail without mutating anything.
       const mySession = state.session;
       // Wait for any in-flight prompt-cache warmup so the cache is primed
-      // before we send the first real transcript turn through.
-      try { await state.warmupPromise; } catch { /* warmup errors are logged elsewhere */ }
+      // before we send the first real transcript turn through - but cap the
+      // wait so a slow/long warmup loop can't stall the first edit. If the cap
+      // elapses first, cancel warmup and proceed (this turn may miss the cache,
+      // but the user sees a response instead of a stall). Once warmup resolves,
+      // warmupPromise is already settled and later turns skip the wait.
+      try {
+        let cappedOut = false;
+        let capTimer = null;
+        await Promise.race([
+          state.warmupPromise,
+          new Promise((resolve) => {
+            capTimer = setTimeout(() => { cappedOut = true; resolve(undefined); }, firstTurnWarmupCapMs);
+          }),
+        ]);
+        clearTimeout(capTimer);
+        if (cappedOut) state.cancelWarmup?.();
+      } catch { /* warmup errors are logged elsewhere */ }
       if (state.mode !== "live") return;
       if (!mySession.active) return;
       state.agentBusy = true;
