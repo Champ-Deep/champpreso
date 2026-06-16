@@ -22,7 +22,12 @@ import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
 import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "./whiteboard-elements.js";
 import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
-import { applyWhiteboardEditOperations, formatLineNumberedWhiteboard } from "./whiteboard-tools.js";
+import {
+  applyWhiteboardEditOperations,
+  formatLineNumberedWhiteboard,
+  mapSelectedIdsToLineNumbers,
+  restoreUnselectedElements,
+} from "./whiteboard-tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -226,6 +231,33 @@ export async function startServer(options) {
       return res.status(400).json({ error: "Nudge could not be applied." });
     }
     res.json({ ok: true, text });
+  });
+  // v0.15.0: scoped edit. The user drag-selects elements, types an instruction,
+  // and the agent edits ONLY those elements. We map the selected element ids to
+  // their current line numbers, record the scope, and fire a turn whose
+  // transcript is the instruction. A hard backstop in runWhiteboardAgent
+  // restores any unselected element the agent touches.
+  app.post("/api/preso/scoped-edit", express.json(), (req, res) => {
+    if (state.mode !== "live") {
+      return res.status(409).json({ error: "Not in PRESO mode. Start a preso first." });
+    }
+    const selectedIds = Array.isArray(req.body?.selectedIds)
+      ? req.body.selectedIds.map((id) => String(id)).filter(Boolean)
+      : [];
+    const instruction = String(req.body?.instruction ?? "").trim().slice(0, 500);
+    if (selectedIds.length === 0) {
+      return res.status(400).json({ error: "Select one or more elements first." });
+    }
+    if (!instruction) {
+      return res.status(400).json({ error: "Instruction required." });
+    }
+    const lineNumbers = mapSelectedIdsToLineNumbers(state.elements, selectedIds);
+    if (lineNumbers.length === 0) {
+      return res.status(400).json({ error: "Selected elements are not on the current canvas." });
+    }
+    state.setScopedEdit({ selectedIds, lineNumbers, instruction });
+    state.queueTranscript(instruction);
+    res.json({ ok: true, selectedIds, lineNumbers, instruction });
   });
 
   app.put("/api/settings", async (req, res) => {
@@ -461,6 +493,10 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   // ~7-10k tokens of noise without giving the agent new visual info.
   const screenshotForAgent = state.canvasDirtyForAgent ? state.latestScreenshot : undefined;
   state.canvasDirtyForAgent = false;
+  // v0.15.0: scoped edit. Capture the scope + a pre-turn element snapshot so the
+  // hard backstop below can restore any unselected element the agent touches.
+  const scopedEditForTurn = state.scopedEdit;
+  const scopedBeforeElements = scopedEditForTurn ? [...state.elements] : null;
   const rawMessages = buildWhiteboardAgentMessages({
     elements: state.elements,
     agentHistory: state.agentHistory,
@@ -676,6 +712,20 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   });
   recordAgentCost(state, wss, agentProvider, result);
   options.onAgentEvent?.({ type: "model:end", transcript, result: summarizeAgentResult(result), timestamp: new Date().toISOString() });
+
+  // v0.15.0: scoped-edit hard backstop. Restore any unselected element the agent
+  // changed or deleted, so a scoped edit can never drift the rest of the canvas.
+  // Only rebroadcast when the guard actually corrected something.
+  if (scopedEditForTurn && mySession.active) {
+    const reconciled = restoreUnselectedElements(scopedBeforeElements, state.elements, scopedEditForTurn.selectedIds);
+    const changed =
+      reconciled.length !== state.elements.length ||
+      reconciled.some((element, index) => element !== state.elements[index]);
+    if (changed) {
+      state.elements = reconciled;
+      broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+    }
+  }
 
   if (mySession.active) {
     state.agentHistory = appendWhiteboardAgentHistory(state.agentHistory, {
@@ -1157,7 +1207,10 @@ function formatCurrentCanvasTask(elements, latestScreenshot, state) {
   const pinnedList = state && state.pinnedIds && state.pinnedIds.size > 0
     ? `\n\nPINNED IDS (do not modify or delete): ${JSON.stringify(Array.from(state.pinnedIds))}`
     : "";
-  const text = `Current line-numbered whiteboard content:\n${formatLineNumberedWhiteboard(elements)}${pinnedList}\n\nTask:\nUse the latest speaker turn and prior context to decide whether the canvas should change.\n\nBEFORE choosing a layout, check the "Reference context for this presentation" section in your system instructions: it contains the staging area the user prepared, including any diagrams. If the speaker has just reached a topic that the staging diagrams already cover, REUSE that staging structure on the live canvas - same shapes, same labels, same arrangement, same colors - rather than inventing a different layout. The staging is the user's pre-approved visualization for those topics; only invent something new when staging doesn't cover the topic at all.\n\nIf updating, use whiteboard_apply for targeted changes (operations + viewport in ONE call). Use whiteboard_overwrite only when you need to clear, reset, or start fresh. Keep the canvas organized around the core concepts, not the transcript sequence. In the same whiteboard_apply call, also include viewport with action "scroll_to_content" AND focus_ids naming the elements the speaker is currently talking about, so the viewport centers exactly on the active talking point - never call scroll_to_content without focus_ids. Make ONE whiteboard_apply call per turn whenever possible; do not split edits and viewport into back-to-back calls. The attached screenshot (when present) shows the audience's current viewport - use it to verify your edits actually look good and that the right region is visible.`;
+  const scoped = state && state.scopedEdit && state.scopedEdit.lineNumbers?.length > 0
+    ? `\n\nSCOPED EDIT — the user drag-selected specific elements and wants you to edit ONLY them. Modify ONLY lines ${JSON.stringify(state.scopedEdit.lineNumbers)} (element ids ${JSON.stringify(state.scopedEdit.selectedIds)}). Treat every other element as locked: do not change, move, restyle, or delete it. You MAY add new elements if the instruction needs them. Apply this instruction: "${state.scopedEdit.instruction}".`
+    : "";
+  const text = `Current line-numbered whiteboard content:\n${formatLineNumberedWhiteboard(elements)}${pinnedList}${scoped}\n\nTask:\nUse the latest speaker turn and prior context to decide whether the canvas should change.\n\nBEFORE choosing a layout, check the "Reference context for this presentation" section in your system instructions: it contains the staging area the user prepared, including any diagrams. If the speaker has just reached a topic that the staging diagrams already cover, REUSE that staging structure on the live canvas - same shapes, same labels, same arrangement, same colors - rather than inventing a different layout. The staging is the user's pre-approved visualization for those topics; only invent something new when staging doesn't cover the topic at all.\n\nIf updating, use whiteboard_apply for targeted changes (operations + viewport in ONE call). Use whiteboard_overwrite only when you need to clear, reset, or start fresh. Keep the canvas organized around the core concepts, not the transcript sequence. In the same whiteboard_apply call, also include viewport with action "scroll_to_content" AND focus_ids naming the elements the speaker is currently talking about, so the viewport centers exactly on the active talking point - never call scroll_to_content without focus_ids. Make ONE whiteboard_apply call per turn whenever possible; do not split edits and viewport into back-to-back calls. The attached screenshot (when present) shows the audience's current viewport - use it to verify your edits actually look good and that the right region is visible.`;
   if (typeof latestScreenshot === "string" && latestScreenshot) {
     return [
       { type: "text", text },
@@ -1279,6 +1332,13 @@ On every turn you receive a "PINNED IDS" list in the current canvas state messag
 - NEVER call whiteboard_overwrite if any pinned element exists on the canvas (it would wipe them).
 - You MAY insert new elements adjacent to pinned ones, draw arrows that touch pinned ones, or move the viewport to focus on them.
 - If the speaker explicitly asks to remove a pinned element, do NOT do it yourself. Call ask_user_question to confirm.
+
+SCOPED EDITS.
+Some turns include a "SCOPED EDIT" directive in the current canvas state message. This means the user drag-selected specific elements and wants you to change ONLY those. RULES:
+- Edit ONLY the listed lines / element ids. Apply the user's instruction to them precisely.
+- Treat every other element as locked: do not replace, delete, move, recolor, or restyle it. The system enforces this and will silently revert any stray change you make to an unselected element, so spending edits there is wasted.
+- You MAY insert brand-new elements if the instruction genuinely needs them (e.g. a new label on a selected box). Prefer the smallest change that satisfies the instruction.
+- Make the change in ONE whiteboard_apply call. You do not need to scroll the viewport unless the instruction implies it.
 
 MULTI-SPEAKER SESSIONS.
 The transcript may include multiple speakers in a co-thinking session. Speaker turns are NOT explicitly labeled by the transcription engine in most cases. When you can infer from context that speakers have switched (different pronouns, different topics, "I think... vs you mentioned"), attribute ideas to the right person if a name was used. When the speaker count is ambiguous, treat it as one voice. If you successfully attribute an idea to a named speaker, optionally color-code that speaker's shapes with one consistent fill color and reuse it for their other contributions.

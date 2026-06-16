@@ -64,6 +64,12 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     // v0.8.0: pinned element IDs. The agent is instructed not to modify or
     // delete these. Mutated by /api/preso/pin and /api/preso/unpin.
     pinnedIds: new Set(),
+    // v0.15.0: scoped edit. When the user drag-selects elements and types an
+    // instruction, this holds { selectedIds, lineNumbers, instruction } for the
+    // next turn. The agent is told to edit ONLY those elements, and a hard
+    // backstop restores any unselected element it touches. Cleared after the
+    // turn it applies to. Set by /api/preso/scoped-edit.
+    scopedEdit: null,
     // v0.8.0: interrupt signal. When set, the in-flight runAgent loop should
     // abort at the next tool boundary. Cleared after every turn boundary.
     interruptSignal: { aborted: false, reason: null },
@@ -147,6 +153,9 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
         options.onAgentEvent?.({ type: "turn:error", transcript, error: error.message, timestamp: new Date().toISOString() });
       } finally {
         state.agentBusy = false;
+        // A scoped edit applies to exactly one turn; clear it so the next
+        // (voice) turn is unconstrained again.
+        state.clearScopedEdit();
         publishAgentStatus();
       }
     },
@@ -361,6 +370,26 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     });
     broadcast(wss, { type: "nudge:applied", text: trimmed, timestamp: new Date().toISOString() });
     return true;
+  };
+  // v0.15.0: scoped edit. Stash the user's selection + instruction so the next
+  // turn edits only those elements. queueTranscript(instruction) is what fires
+  // the turn; this just records the scope the agent run and the backstop read.
+  state.setScopedEdit = ({ selectedIds, lineNumbers, instruction }) => {
+    state.scopedEdit = {
+      selectedIds: Array.isArray(selectedIds) ? selectedIds : [],
+      lineNumbers: Array.isArray(lineNumbers) ? lineNumbers : [],
+      instruction: String(instruction ?? "").trim(),
+    };
+    broadcast(wss, {
+      type: "scoped-edit:applied",
+      selectedIds: state.scopedEdit.selectedIds,
+      instruction: state.scopedEdit.instruction,
+      timestamp: new Date().toISOString(),
+    });
+    return true;
+  };
+  state.clearScopedEdit = () => {
+    state.scopedEdit = null;
   };
   state.startPreso = ({ primerMessage, agentInstructions = "", notesAndTranscripts = "" }) => {
     state.endSession();
