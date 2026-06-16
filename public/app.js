@@ -164,6 +164,9 @@ function App() {
   const selectedIdsRef = React.useRef([]);
   const [scopedEditText, setScopedEditText] = React.useState("");
   const [scopedEditSending, setScopedEditSending] = React.useState(false);
+  // v0.15.0: typed turn ("type a point to add to the board").
+  const [sayText, setSayText] = React.useState("");
+  const [saySending, setSaySending] = React.useState(false);
   const [error, setError] = React.useState("");
   const [micError, setMicError] = React.useState(false);
   const [agentError, setAgentError] = React.useState(false);
@@ -517,6 +520,31 @@ function App() {
       setError(e.message || "Scoped edit failed.");
     } finally {
       setScopedEditSending(false);
+    }
+  }
+
+  // v0.15.0: typed turn. Send a typed point as a normal transcript turn so the
+  // agent diagrams it - a no-voice path to capture ideas into the canvas.
+  async function sendTypedTurn(text) {
+    const trimmed = String(text ?? "").trim();
+    if (!trimmed) return;
+    setSaySending(true);
+    try {
+      const res = await fetch("/api/preso/say", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: trimmed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || "Could not add that to the board.");
+        return;
+      }
+      setSayText("");
+    } catch (e) {
+      setError(e.message || "Could not add that to the board.");
+    } finally {
+      setSaySending(false);
     }
   }
 
@@ -1960,6 +1988,35 @@ function App() {
                     "Clear"
                   )
                 : null
+            ),
+            React.createElement(
+              "form",
+              {
+                className: "th-say",
+                onSubmit: (e) => {
+                  e.preventDefault();
+                  sendTypedTurn(sayText);
+                },
+              },
+              React.createElement("input", {
+                className: "th-say-input",
+                type: "text",
+                value: sayText,
+                placeholder: "Type a point to add to the board…",
+                disabled: saySending,
+                "aria-label": "Type a point to add to the board",
+                onChange: (e) => setSayText(e.target.value),
+              }),
+              React.createElement(
+                "button",
+                {
+                  type: "submit",
+                  className: "th-say-send",
+                  disabled: saySending || !sayText.trim(),
+                  title: "Add this to the board",
+                },
+                saySending ? "…" : "Add"
+              )
             ),
             React.createElement(
               "div",

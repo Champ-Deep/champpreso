@@ -259,6 +259,20 @@ export async function startServer(options) {
     state.queueTranscript(instruction);
     res.json({ ok: true, selectedIds, lineNumbers, instruction });
   });
+  // v0.15.0: typed turn. A no-voice path to capture an idea and have the agent
+  // diagram it - the typed text is queued as a normal transcript turn. Useful
+  // when typing is faster/cleaner than speaking, or STT is unavailable.
+  app.post("/api/preso/say", express.json(), (req, res) => {
+    if (state.mode !== "live") {
+      return res.status(409).json({ error: "Not in PRESO mode. Start a preso first." });
+    }
+    const text = String(req.body?.text ?? "").trim().slice(0, 2000);
+    if (!text) {
+      return res.status(400).json({ error: "Text required." });
+    }
+    state.queueTranscript(text);
+    res.json({ ok: true, text });
+  });
 
   app.put("/api/settings", async (req, res) => {
     if (!options.settingsStore) return res.status(404).json({ error: "Settings store not available." });

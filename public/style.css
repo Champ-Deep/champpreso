@@ -2662,3 +2662,42 @@ button:disabled {
 }
 .shell[data-panel-theme="dark"] .th-duration { color: var(--champ-ember-glow); }
 
+/* v0.15.0: typed-turn input ("type a point to add to the board"). */
+.th-say {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+.th-say-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md, 8px);
+  background: color-mix(in srgb, var(--champ-slate) 8%, #fff);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: inherit;
+  outline: none;
+}
+.th-say-input:focus { border-color: var(--champ-ember); }
+.th-say-send {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--r-md, 8px);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--champ-ember);
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.th-say-send:hover:not(:disabled) { background: var(--champ-ember-glow); }
+.th-say-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.shell[data-panel-theme="dark"] .th-say-input {
+  background: color-mix(in srgb, var(--champ-slate) 60%, #000);
+  color: #F4F5F7;
+}
+

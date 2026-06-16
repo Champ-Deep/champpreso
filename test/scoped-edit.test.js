@@ -73,6 +73,44 @@ test("scoped-edit maps selected ids to 1-based line numbers and accepts the turn
   }
 });
 
+test("typed turn (/api/preso/say) is live-only and queues the text as a turn", async () => {
+  const { httpServer, url, state } = await startTestServer();
+  try {
+    const staging = await fetch(`${url}/api/preso/say`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "draw a funnel" }),
+    });
+    assert.equal(staging.status, 409);
+
+    state.mode = "live";
+    const queued = [];
+    const realQueue = state.queueTranscript;
+    state.queueTranscript = (text) => {
+      queued.push(text);
+      return realQueue?.(text);
+    };
+
+    const ok = await fetch(`${url}/api/preso/say`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "draw a funnel" }),
+    });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(queued, ["draw a funnel"]);
+
+    const empty = await fetch(`${url}/api/preso/say`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "   " }),
+    });
+    assert.equal(empty.status, 400);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
+});
+
 test("scoped-edit validates selection and instruction", async () => {
   const { httpServer, url, state } = await startTestServer();
   try {
