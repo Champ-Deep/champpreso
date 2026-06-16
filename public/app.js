@@ -129,6 +129,22 @@ function useExcalidrawThemeSync(apiRef, panelTheme) {
   }, [panelTheme, apiRef]);
 }
 
+// v0.15.0: turn timing for the Live Transcript History. Derive a turn's
+// end-to-end duration from the turn-start / turn-end timestamps the server
+// broadcasts, and format it compactly for display.
+function turnDurationMs(startedAt, endedAt) {
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return end - start;
+}
+
+function formatDuration(ms) {
+  if (ms == null) return "";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 function App() {
   const apiRef = React.useRef(null);
   const [api, setApi] = React.useState(null);
@@ -790,7 +806,8 @@ function App() {
               id: message.turnId,
               text: message.transcript,
               status: "processing",
-              timestamp: message.timestamp
+              timestamp: message.timestamp,
+              startedAt: message.timestamp
             }
           ].slice(-TRANSCRIPT_HISTORY_LIMIT);
         });
@@ -799,7 +816,7 @@ function App() {
         setTranscriptHistory((prev) => {
           return prev.map((item) => {
             if (item.id === message.turnId) {
-              return { ...item, status: "completed" };
+              return { ...item, status: "completed", durationMs: turnDurationMs(item.startedAt, message.timestamp) };
             }
             return item;
           });
@@ -809,7 +826,7 @@ function App() {
         setTranscriptHistory((prev) => {
           return prev.map((item) => {
             if (item.id === message.turnId) {
-              return { ...item, status: "failed", error: message.error };
+              return { ...item, status: "failed", error: message.error, durationMs: turnDurationMs(item.startedAt, message.timestamp) };
             }
             return item;
           });
@@ -1988,7 +2005,14 @@ function App() {
                               minute: "2-digit",
                               second: "2-digit",
                             })
-                          )
+                          ),
+                          item.durationMs != null
+                            ? React.createElement(
+                                "span",
+                                { className: "th-duration", title: "Time from speech to edit" },
+                                formatDuration(item.durationMs)
+                              )
+                            : null
                         ),
                         React.createElement("div", { className: "th-text" }, item.text),
                         item.error

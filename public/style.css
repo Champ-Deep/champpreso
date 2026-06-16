@@ -2651,3 +2651,14 @@ button:disabled {
 .shell[data-panel-theme="dark"] .scoped-edit-bar .se-input { color: #F4F5F7; }
 .shell[data-panel-theme="dark"] .scoped-edit-bar .se-input::placeholder { color: rgba(244, 245, 247, 0.42); }
 
+/* v0.15.0: per-turn latency badge in the Live Transcript History. */
+.th-duration {
+  margin-left: auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--champ-ember-deep);
+  opacity: 0.85;
+}
+.shell[data-panel-theme="dark"] .th-duration { color: var(--champ-ember-glow); }
+
