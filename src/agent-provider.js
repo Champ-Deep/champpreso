@@ -4,7 +4,10 @@ import { DEFAULT_CODEX_BASE_URL, createCodexFetch, readCodexCliAuthSync } from "
 
 const DEFAULT_OPENAI_AGENT_MODEL = "gpt-5.5";
 const DEFAULT_CODEX_AGENT_MODEL = "gpt-5.5-fast";
-const DEFAULT_OPENROUTER_AGENT_MODEL = "anthropic/claude-3.5-sonnet";
+// DeepSeek V4 Flash: tool-calling capable, 1M context, ~$0.09/$0.18 per 1M
+// tokens - dramatically cheaper than the Claude/GPT tier for realtime
+// whiteboarding. This is the cost-effective default for OpenRouter.
+const DEFAULT_OPENROUTER_AGENT_MODEL = "deepseek/deepseek-v4-flash";
 // Groq runs Llama-class models on LPU silicon at 400-800 tok/s. Llama 3.3 70B
 // Versatile is the sweet spot for tool-calling under realtime pressure.
 const DEFAULT_GROQ_AGENT_MODEL = "llama-3.3-70b-versatile";

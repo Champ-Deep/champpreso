@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     openai: { model: "gpt-5.5", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
     codex: { model: "gpt-5.5-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
-    openrouter: { model: "anthropic/claude-3.5-sonnet", baseURL: "https://openrouter.ai/api/v1" },
+    openrouter: { model: "deepseek/deepseek-v4-flash", baseURL: "https://openrouter.ai/api/v1" },
     // Fast inference providers. Same OpenAI-compatible API surface.
     groq: { model: "llama-3.3-70b-versatile", baseURL: "https://api.groq.com/openai/v1" },
     cerebras: { model: "llama-3.3-70b", baseURL: "https://api.cerebras.ai/v1" },

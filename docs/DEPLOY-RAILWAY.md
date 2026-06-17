@@ -21,7 +21,7 @@ The agent provider is auto-selected from whichever key is present, in this order
 | Variable | Required? | Value |
 |---|---|---|
 | `OPENROUTER_API_KEY` | **Yes** | Your `sk-or-...` key from [openrouter.ai/keys](https://openrouter.ai/keys). Selects the OpenRouter agent. |
-| `OPENROUTER_MODEL` | Optional | e.g. `anthropic/claude-3.5-sonnet` (strong realtime tool-calling). Omit → defaults to that. |
+| `OPENROUTER_MODEL` | Optional | Defaults to `deepseek/deepseek-v4-flash` (cheap, tool-calling capable). Override with any OpenRouter slug. |
 | `OPENAI_API_KEY` | Only for cloud voice | Speech-to-text via OpenAI Realtime. See the STT note below. |
 
 `PORT` is injected by Railway automatically — do not set it. `RAILWAY_ENVIRONMENT` is detected
@@ -33,10 +33,11 @@ automatically and makes the server bind `0.0.0.0` and skip the browser-open step
 The single production LLM job is the live whiteboard agent (warmup + every turn, same model). It
 needs reliable tool-calling under realtime latency:
 
-- `anthropic/claude-3.5-sonnet` — default; best balance for realtime tool-calling.
-- `google/gemini-2.5-flash` — faster and cheaper, slightly less precise edits.
-- `meta-llama/llama-3.3-70b-instruct:free` — $0, decent, weaker tool-calling — fine for testing,
-  not a live demo.
+- `deepseek/deepseek-v4-flash` — **default**; tool-calling capable, 1M context, ~$0.09/$0.18 per 1M
+  tokens. The cost-effective pick for long sessions.
+- `deepseek/deepseek-v4-pro` — same family, higher quality, still far cheaper than the Claude/GPT tier.
+- `anthropic/claude-3.5-sonnet` — strongest tool-calling, but ~30–80× the cost of DeepSeek Flash.
+- `meta-llama/llama-3.3-70b-instruct:free` — $0, weaker tool-calling — fine for testing, not a demo.
 
 The model field is free text — use any current OpenRouter slug.
 
@@ -62,8 +63,8 @@ provider (`src/settings-store.js`). For a working **voice** deploy you therefore
 
 ```sh
 export OPENROUTER_API_KEY="sk-or-your-key-here"
-# optional: override the default model
-export OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+# optional: override the default model (defaults to deepseek/deepseek-v4-flash)
+export OPENROUTER_MODEL="deepseek/deepseek-v4-flash"
 champpreso
 ```
 

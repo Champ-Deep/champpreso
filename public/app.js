@@ -48,6 +48,8 @@ const CEREBRAS_AGENT_MODELS = [
 // Common OpenRouter model slugs. The picker accepts free text so any
 // OpenRouter slug works; these are just sensible defaults for the dropdown.
 const OPENROUTER_AGENT_MODELS = [
+  "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-v4-pro",
   "anthropic/claude-3.5-sonnet",
   "anthropic/claude-3.7-sonnet",
   "anthropic/claude-haiku-4.5",

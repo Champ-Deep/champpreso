@@ -37,7 +37,7 @@ Node 24 or newer is required. Check with `node -v`. If you are on an older Node,
 
    ```sh
    export OPENROUTER_API_KEY="sk-or-v1-paste-it-here"
-   export OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+   export OPENROUTER_MODEL="deepseek/deepseek-v4-flash"
    ```
 
    Reload with `source ~/.zshrc`, then `champpreso`.
@@ -48,10 +48,10 @@ Node 24 or newer is required. Check with `node -v`. If you are on an older Node,
 
 | Model slug | Strength |
 |---|---|
-| `anthropic/claude-3.5-sonnet` | Best balance for tool-calling under realtime pressure. |
-| `anthropic/claude-3.7-sonnet` | Marginally smarter, slightly slower. |
-| `openai/gpt-5.5` | Strong all-rounder, sometimes overdrives the canvas. |
-| `google/gemini-2.5-pro` | Fast, cheap, occasionally creative. |
+| `deepseek/deepseek-v4-flash` | **Default.** Tool-calling capable, 1M context, ~$0.09/$0.18 per 1M tokens — by far the cheapest for long sessions. |
+| `deepseek/deepseek-v4-pro` | Same family, higher quality, still far cheaper than Claude/GPT. |
+| `anthropic/claude-3.5-sonnet` | Strongest tool-calling, but ~30–80× the cost of DeepSeek Flash. |
+| `google/gemini-2.5-pro` | Fast, mid-cost, occasionally creative. |
 | `meta-llama/llama-3.3-70b-instruct` | Free tier through OpenRouter, weaker tool-calling. |
 
 ## Ollama setup, step by step
@@ -93,7 +93,7 @@ Everything lives at `~/.config/champpreso/settings.json` (mode `0600`).
     "openai": { "model": "gpt-5.5", "reasoningEffort": "low", "baseURL": "https://api.openai.com/v1" },
     "codex": { "model": "gpt-5.5-fast" },
     "ollama": { "model": "", "baseURL": "http://localhost:11434/v1" },
-    "openrouter": { "model": "anthropic/claude-3.5-sonnet", "baseURL": "https://openrouter.ai/api/v1" }
+    "openrouter": { "model": "deepseek/deepseek-v4-flash", "baseURL": "https://openrouter.ai/api/v1" }
   },
   "transcription": { "provider": "moonshine", "moonshine": { "model": "medium" } },
   "apiKeys": { "openai": "", "openrouter": "sk-or-v1-..." },
