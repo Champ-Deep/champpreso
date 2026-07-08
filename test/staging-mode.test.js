@@ -73,7 +73,7 @@ test("WebSocket clients receive mode on connect", async () => {
     const messages = await collectMessages(ws, (m) => m.some((x) => x.type === "mode"));
     const modeMsg = messages.find((m) => m.type === "mode");
     assert.ok(modeMsg, "expected initial mode message");
-    assert.equal(modeMsg.mode, "staging");
+    assert.equal(modeMsg.mode, "setup");
   } finally {
     ws.terminate();
     await new Promise((resolve) => httpServer.close(resolve));
@@ -156,17 +156,64 @@ test("POST /api/preso/start broadcasts mode change and fresh whiteboard", async 
     const deadline = Date.now() + 2000;
     while (Date.now() < deadline) {
       const after = messages.slice(baseline);
-      if (after.find((m) => m.type === "mode" && m.mode === "live") &&
+      if (after.find((m) => m.type === "mode" && m.mode === "listening") &&
           after.find((m) => m.type === "whiteboard:update")) break;
       await new Promise((r) => setTimeout(r, 10));
     }
     const after = messages.slice(baseline);
     const modeMsg = after.find((m) => m.type === "mode");
     assert.ok(modeMsg, "expected mode broadcast after start preso");
-    assert.equal(modeMsg.mode, "live");
+    assert.equal(modeMsg.mode, "listening");
     const update = after.find((m) => m.type === "whiteboard:update");
     assert.ok(update, "expected whiteboard:update after start preso");
     assert.deepEqual(update.elements, []);
+  } finally {
+    ws.terminate();
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
+});
+
+test("WS mode broadcasts use the new setup/listening vocabulary, not staging/live", async () => {
+  const { httpServer, url } = await startTestServer();
+  const ws = new WebSocket(url.replace("http:", "ws:") + "/ws");
+  try {
+    await new Promise((resolve, reject) => {
+      ws.once("open", resolve);
+      ws.once("error", reject);
+    });
+    const messages = [];
+    ws.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+
+    // wait for initial init messages to settle
+    await new Promise((r) => setTimeout(r, 100));
+    const baseline = messages.length;
+
+    const startRes = await fetch(`${url}/api/preso/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stagingElements: [] }),
+    });
+    assert.equal(startRes.status, 200);
+
+    const startDeadline = Date.now() + 2000;
+    while (Date.now() < startDeadline && !messages.slice(baseline).some((m) => m.type === "mode")) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const modeMsg = messages.slice(baseline).find((m) => m.type === "mode");
+    assert.ok(modeMsg, "expected mode broadcast after start preso");
+    assert.equal(modeMsg.mode, "listening");
+
+    const backBaseline = messages.length;
+    const backRes = await fetch(`${url}/api/preso/back-to-staging`, { method: "POST" });
+    assert.equal(backRes.status, 200);
+
+    const backDeadline = Date.now() + 2000;
+    while (Date.now() < backDeadline && !messages.slice(backBaseline).some((m) => m.type === "mode")) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const backMsg = messages.slice(backBaseline).find((m) => m.type === "mode");
+    assert.ok(backMsg, "expected mode broadcast after back-to-staging");
+    assert.equal(backMsg.mode, "setup");
   } finally {
     ws.terminate();
     await new Promise((resolve) => httpServer.close(resolve));

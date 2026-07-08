@@ -187,7 +187,7 @@ export async function startServer(options) {
       // exactly the bytes warmup wrote to cache.
       primingMessages: WARMUP_PRIMING_MESSAGES,
     });
-    broadcast(wss, { type: "mode", mode: state.mode });
+    broadcast(wss, { type: "mode", mode: toWireMode(state.mode) });
     broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     broadcastCost(wss, state);
     res.json({ ok: true });
@@ -201,7 +201,7 @@ export async function startServer(options) {
   app.post("/api/session/back-to-staging", (_req, res) => {
     state.backToStaging();
     transcription.setSessionContext({ keywords: [] });
-    broadcast(wss, { type: "mode", mode: state.mode });
+    broadcast(wss, { type: "mode", mode: toWireMode(state.mode) });
     res.json({ ok: true });
   });
 
@@ -377,7 +377,7 @@ export async function startServer(options) {
       client.send(JSON.stringify({ type: "settings", settings: sanitized }));
     }
     client.send(JSON.stringify({ type: "agent:status", status: state.agentStatus }));
-    client.send(JSON.stringify({ type: "mode", mode: state.mode }));
+    client.send(JSON.stringify({ type: "mode", mode: toWireMode(state.mode) }));
     client.send(JSON.stringify({ type: "warmup", ...state.warmupState }));
     client.send(JSON.stringify({ type: "cost", ...state.cost.getSummary() }));
     if (state.mode === "live") {
@@ -1078,6 +1078,15 @@ function recordAgentCost(state, wss, agentProvider, result) {
 export function broadcastCost(wss, state) {
   if (!wss || !state?.cost) return;
   broadcast(wss, { type: "cost", ...state.cost.getSummary() });
+}
+
+// Wire-format rename only: state.mode keeps its internal "staging"/"live"
+// values everywhere else in the codebase. This maps to the frontend's
+// setup/listening vocabulary at the WS boundary. "paused" and "review" are
+// not modeled here - paused has its own dedicated capture:paused message,
+// and review has no backend trigger defined yet.
+export function toWireMode(mode) {
+  return mode === "live" ? "listening" : "setup";
 }
 
 function summarizeAgentResult(result) {
