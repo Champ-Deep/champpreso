@@ -1,0 +1,13 @@
+/* =========================================================
+   AEGIS · ROOT STYLESHEET
+   ---------------------------------------------------------
+   The single entry point for the Champ Suite design language.
+   Consumers link THIS file. It pulls in the canonical token
+   layer (neutrals, Ember, type, spacing, radii, motion,
+   shadows, semantic roles, light theme, and all 12 worlds).
+
+   For app-shell components (sidebar, topbar, tables, cards,
+   buttons) also link ui_kits/_shared/kit.css.
+   ========================================================= */
+
+@import url("./colors_and_type.css");

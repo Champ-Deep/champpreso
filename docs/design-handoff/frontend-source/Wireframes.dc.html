@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Shantell+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f0eee9;font-family:'Shantell Sans',system-ui,sans-serif}
+a{color:#2a78d6}a:hover{color:#1a5cb0}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'Shantell Sans',sans-serif;color:#1a1a1a}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;margin-bottom:26px}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 12px/1.3 'Shantell Sans',sans-serif;color:rgba(0,0,0,.6)}
+.dv-card{max-width:100%;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}
+.dv-next{margin:22px 0 0;font:12px/1.5 'Shantell Sans',sans-serif;color:rgba(0,0,0,.5)}
+.dv-sub{font:600 12px 'Shantell Sans',sans-serif;color:#555;margin:0 0 12px;letter-spacing:.04em;text-transform:uppercase}
+.wf{position:relative;overflow:hidden;background:#fff;font-family:'Patrick Hand',cursive;color:#2a2a2a;font-size:13px}
+.ln{display:block;height:6px;border-radius:3px;background:#d9d6cf}
+.box{border:1.6px solid #55524b;border-radius:5px;background:#fff}
+.dash{border:1.6px dashed #b3b0a7;border-radius:6px}
+.chip{display:inline-flex;align-items:center;gap:5px;border:1.6px solid #2a2a2a;border-radius:999px;padding:1px 9px;font-size:11.5px;background:#fff;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:1.6px solid #2a2a2a;border-radius:6px;padding:3px 12px;font-size:12.5px;background:#fff;white-space:nowrap}
+.ember{background:#FF6B35;border-color:#FF6B35;color:#fff}
+.dot{width:8px;height:8px;border-radius:50%;background:#FF6B35;display:inline-block}
+.ann{font:400 11.5px/1.45 'Patrick Hand',cursive;color:#6a675f;max-width:520px}
+.dkbar{background:#191b20;color:#e8e6e1;display:flex;align-items:center;gap:10px}
+.canvas-doodle{position:absolute;pointer-events:none}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">ChampPreso shell rebuild · wireframe exploration (canvas = light Excalidraw, chrome = dark Aegis)</span></div>
+
+<p class="dv-sub">A · Listening state — where the chrome lives (&lt;8% of screen)</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a">
+  <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>The Dock — one thin bottom strip holds everything</div>
+  <div class="dv-card"><div class="wf" style="width:540px;height:340px">
+    <svg class="canvas-doodle" style="left:60px;top:40px" width="420" height="220" viewBox="0 0 420 220" fill="none" stroke="#b8b5ad" stroke-width="1.6">
+      <rect x="10" y="20" width="110" height="46" rx="6"></rect>
+      <rect x="170" y="10" width="110" height="46" rx="6"></rect>
+      <rect x="300" y="60" width="110" height="46" rx="6"></rect>
+      <path d="M120 44 C 145 40, 150 34, 168 32"></path>
+      <path d="M280 40 C 295 48, 292 66, 300 78"></path>
+      <ellipse cx="90" cy="150" rx="70" ry="34"></ellipse>
+      <path d="M162 150 L 250 150 M242 143 L 252 150 L 242 157"></path>
+      <rect x="260" y="128" width="120" height="44" rx="22"></rect>
+    </svg>
+    <div style="position:absolute;left:180px;bottom:64px" class="chip" ><span style="opacity:.6">“…so phase two starts after the audit”</span></div>
+    <div class="dkbar" style="position:absolute;left:0;right:0;bottom:0;height:36px;padding:0 12px">
+      <span class="dot"></span><span style="font-size:12px">Listening · 12:41</span>
+      <div style="flex:1;display:flex;align-items:center;border:1.4px solid #4a4d55;border-radius:6px;height:24px;padding:0 8px;color:#8a8d95;font-size:12px">Whisper a steer… (“group these by owner”)</div>
+      <span class="btn" style="background:transparent;color:#e8e6e1;border-color:#4a4d55;padding:2px 8px">‖ Pause</span>
+      <span class="btn" style="background:transparent;color:#e8e6e1;border-color:#4a4d55;padding:2px 8px">↶ Undo</span>
+      <span style="color:#6a6d75;font-size:14px">⋯</span>
+    </div>
+  </div></div>
+  <div class="ann">One 36px strip: status glyph + timer, steer field (the hero control), pause, undo, overflow (cost, captions toggle, settings). Caption pill floats above it and fades after 4s. Survives a 700px window: steer field just shrinks.</div>
+</div>
+
+<div class="dv-opt" id="1b">
+  <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>The Halo — status on top, steer summoned from below</div>
+  <div class="dv-card"><div class="wf" style="width:540px;height:340px">
+    <div class="dkbar" style="position:absolute;left:0;right:0;top:0;height:26px;padding:0 12px;font-size:11.5px">
+      <span class="dot"></span><span>Listening</span><span style="color:#6a6d75">·</span><span style="color:#9a9d a5;color:#9a9da5">agent drawing…</span>
+      <span style="flex:1"></span>
+      <span style="color:#6a6d75">structured zone</span><span style="color:#6a6d75">$0.14</span><span style="color:#6a6d75">⚙</span>
+    </div>
+    <div class="box" style="position:absolute;left:150px;top:38px;width:240px;padding:8px 10px;border-width:2px">
+      <div style="font-size:12px;margin-bottom:6px">Who owns the audit step?</div>
+      <div style="display:flex;gap:6px"><span class="chip">Priya</span><span class="chip">Marco</span><span class="chip" style="border-style:dashed;color:#8a877f">skip ✕</span></div>
+    </div>
+    <svg class="canvas-doodle" style="left:60px;top:120px" width="420" height="160" viewBox="0 0 420 160" fill="none" stroke="#b8b5ad" stroke-width="1.6">
+      <rect x="10" y="10" width="100" height="40" rx="6"></rect>
+      <rect x="160" y="10" width="100" height="40" rx="6"></rect>
+      <rect x="310" y="10" width="100" height="40" rx="6"></rect>
+      <path d="M110 30 L158 30 M150 24 L160 30 L150 36"></path>
+      <path d="M260 30 L308 30 M300 24 L310 30 L300 36"></path>
+      <rect x="85" y="90" width="240" height="50" rx="25"></rect>
+    </svg>
+    <div style="position:absolute;left:110px;right:110px;bottom:14px;display:flex;align-items:center;gap:8px">
+      <div class="dkbar" style="flex:1;height:30px;border-radius:8px;padding:0 10px;font-size:12px;color:#8a8d95">Steer the agent… <span style="margin-left:auto;color:#5a5d65">press /</span></div>
+    </div>
+  </div></div>
+  <div class="ann">26px top hairline = pure status (state, activity, zone, cost, settings). Question cards drop from it. Steer bar is a floating field at bottom, summoned by “/” or hover — invisible otherwise. Most canvas of the three.</div>
+</div>
+
+<div class="dv-opt" id="1c">
+  <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>The Satellite — a single corner pill that blooms open</div>
+  <div class="dv-card"><div class="wf" style="width:540px;height:340px">
+    <svg class="canvas-doodle" style="left:80px;top:30px" width="400" height="230" viewBox="0 0 400 230" fill="none" stroke="#b8b5ad" stroke-width="1.6">
+      <ellipse cx="200" cy="60" rx="80" ry="34"></ellipse>
+      <rect x="30" y="140" width="100" height="44" rx="6"></rect>
+      <rect x="160" y="150" width="100" height="44" rx="6"></rect>
+      <rect x="290" y="140" width="100" height="44" rx="6"></rect>
+      <path d="M160 90 C 120 110, 100 120, 90 138"></path>
+      <path d="M200 96 L205 148"></path>
+      <path d="M245 90 C 290 110, 320 120, 335 138"></path>
+    </svg>
+    <div style="position:absolute;left:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+      <div class="dkbar" style="border-radius:8px;padding:5px 9px;font-size:11.5px;flex-direction:column;align-items:stretch;gap:5px">
+        <span style="display:flex;gap:7px;align-items:center"><span style="opacity:.8">‖</span> Pause</span>
+        <span style="display:flex;gap:7px;align-items:center"><span style="opacity:.8">↶</span> Undo last drawing</span>
+        <span style="display:flex;gap:7px;align-items:center"><span style="opacity:.8">✎</span> Steer…</span>
+        <span style="display:flex;gap:7px;align-items:center;color:#8a8d95"><span>⋯</span> Cost · Captions · Settings</span>
+      </div>
+      <div class="dkbar" style="border-radius:999px;padding:4px 12px;font-size:12px"><span class="dot"></span> Listening · 12:41</div>
+    </div>
+    <div style="position:absolute;right:0;bottom:40px;width:150px" class="ann">hover the pill →<br>it blooms into the stack (shown open)</div>
+    <div style="position:absolute;left:150px;bottom:16px" class="chip"><span style="opacity:.6">“…budget stays flat in Q3”</span></div>
+  </div></div>
+  <div class="ann">Steady state is ONE pill (~2% of screen). Everything else appears on hover or keystroke. Max canvas, but controls are hidden behind a hover — riskier for mid-meeting speed.</div>
+</div>
+</div>
+
+<p class="dv-sub">B · Setup state — the new front door</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1d">
+  <div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Pre-flight sheet — focused card over a dimmed canvas</div>
+  <div class="dv-card"><div class="wf" style="width:540px;height:360px;background:#e9e7e2">
+    <svg class="canvas-doodle" style="left:40px;top:30px;opacity:.35" width="460" height="300" viewBox="0 0 460 300" fill="none" stroke="#b8b5ad" stroke-width="1.6">
+      <rect x="20" y="30" width="110" height="44" rx="6"></rect><rect x="330" y="220" width="110" height="44" rx="6"></rect><ellipse cx="370" cy="70" rx="60" ry="28"></ellipse>
+    </svg>
+    <div class="dkbar" style="position:absolute;left:110px;top:26px;width:300px;border-radius:12px;padding:16px;flex-direction:column;align-items:stretch;gap:10px">
+      <div style="font-family:'Shantell Sans';font-weight:600;font-size:14px">New session</div>
+      <div>
+        <div style="font-size:11px;color:#9a9da5;margin-bottom:3px">WHAT SHOULD THIS SESSION GET TO?</div>
+        <div class="box" style="background:#22242a;border-color:#4a4d55;padding:7px 9px;color:#8a8d95;font-size:12px">Get to a concrete Q3 plan for Lake Stream</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#9a9da5;margin-bottom:3px">SEED IT (OPTIONAL)</div>
+        <div class="dash" style="border-color:#4a4d55;padding:12px 9px;color:#6a6d75;font-size:12px;text-align:center">paste notes, or close this and draw on the canvas</div>
+      </div>
+      <div style="display:flex;gap:12px;font-size:12px;color:#c8c6c1"><span>☐ Multiple speakers</span><span style="margin-left:auto;color:#8a8d95;text-decoration:underline">Restore last session</span></div>
+      <div class="btn ember" style="height:30px;font-size:14px">Start listening</div>
+      <div style="display:flex;gap:8px;font-size:10.5px;color:#7a7d85"><span style="color:#67d08a">● agent warm</span><span>MacBook mic</span><span>local transcription</span></div>
+    </div>
+  </div></div>
+  <div class="ann">Canvas dims behind a single dark card. Intent first, seed second, one Ember CTA. Readiness is a quiet glyph row, never a gate. Close the card to seed by drawing directly.</div>
+</div>
+
+<div class="dv-opt" id="1e">
+  <div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>The Runway — dedicated full screen, seed previews live</div>
+  <div class="dv-card"><div class="wf dkbar" style="width:540px;height:360px;background:#15171c;flex-direction:column;align-items:stretch;gap:0">
+    <div style="padding:20px 24px 0">
+      <div style="font-family:'Shantell Sans';font-weight:600;font-size:16px">Where should this conversation land?</div>
+    </div>
+    <div style="display:flex;gap:16px;padding:14px 24px;flex:1">
+      <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+        <div class="box" style="background:#22242a;border-color:#4a4d55;padding:10px;color:#e8e6e1;font-size:13px;min-height:40px">Map every objection in this renewal call</div>
+        <div class="dash" style="border-color:#4a4d55;flex:1;padding:10px;color:#6a6d75;font-size:12px">Drop what you have so far — notes, bullets, a doc. It lands on the canvas before you start. <span style="color:#e8946a">(backend ask: /session/seed)</span></div>
+        <div style="display:flex;gap:14px;font-size:12px;color:#c8c6c1"><span>☐ Multiple speakers</span><span style="color:#8a8d95;text-decoration:underline">Restore last session</span></div>
+      </div>
+      <div style="width:200px;display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:10.5px;color:#7a7d85">SEED PREVIEW</div>
+        <div style="flex:1;background:#fff;border-radius:8px;position:relative">
+          <svg style="position:absolute;left:16px;top:18px" width="160" height="150" viewBox="0 0 160 150" fill="none" stroke="#b8b5ad" stroke-width="1.5">
+            <rect x="6" y="6" width="66" height="30" rx="5"></rect><rect x="88" y="6" width="66" height="30" rx="5"></rect>
+            <rect x="6" y="56" width="66" height="30" rx="5"></rect><rect x="88" y="56" width="66" height="30" rx="5"></rect>
+            <rect x="40" y="108" width="80" height="32" rx="16"></rect>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 24px;border-top:1px solid #2a2d35">
+      <span style="font-size:10.5px;color:#67d08a">● agent warm</span><span style="font-size:10.5px;color:#7a7d85">MacBook mic · local transcription</span>
+      <span style="flex:1"></span>
+      <span class="btn ember" style="height:30px;padding:3px 20px;font-size:14px">Start listening</span>
+    </div>
+  </div></div>
+  <div class="ann">Setup is its own room; the canvas appears at start, already seeded. Strongest story for the “seed with existing work” path, but adds a screen transition. Preview pane needs the seed endpoint (flagged).</div>
+</div>
+
+<div class="dv-opt" id="1f">
+  <div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>On-canvas rail — canvas IS the setup, rail steers it</div>
+  <div class="dv-card"><div class="wf" style="width:540px;height:360px">
+    <div class="dkbar" style="position:absolute;left:0;top:0;bottom:0;width:170px;border-radius:0;padding:14px 12px;flex-direction:column;align-items:stretch;gap:10px">
+      <div style="font-family:'Shantell Sans';font-weight:600;font-size:13px">Setup</div>
+      <div>
+        <div style="font-size:10px;color:#9a9da5;margin-bottom:3px">SESSION INTENT</div>
+        <div class="box" style="background:#22242a;border-color:#4a4d55;padding:6px 8px;color:#8a8d95;font-size:11px;min-height:34px">Get to a concrete Q3 plan…</div>
+      </div>
+      <div style="font-size:11px;color:#c8c6c1">☐ Multiple speakers</div>
+      <div style="font-size:11px;color:#8a8d95;text-decoration:underline">Restore last session</div>
+      <div style="flex:1"></div>
+      <div style="font-size:10px;color:#7a7d85">Seed the canvas: paste or draw directly on it →</div>
+      <div class="btn ember" style="height:28px;font-size:13px">Start listening</div>
+      <div style="font-size:10px;color:#67d08a">● ready</div>
+    </div>
+    <svg class="canvas-doodle" style="left:210px;top:40px" width="300" height="260" viewBox="0 0 300 260" fill="none" stroke="#b8b5ad" stroke-width="1.6">
+      <rect x="20" y="20" width="110" height="44" rx="6"></rect>
+      <text x="34" y="47" font-family="Patrick Hand" font-size="14" stroke="none" fill="#8a877f">your notes</text>
+      <rect x="160" y="20" width="110" height="44" rx="6"></rect>
+      <path d="M75 64 L75 120 M69 112 L75 122 L81 112"></path>
+      <ellipse cx="80" cy="160" rx="60" ry="30"></ellipse>
+    </svg>
+    <div style="position:absolute;right:14px;bottom:12px" class="ann" style="width:120px">rail collapses to the 1a dock at start</div>
+  </div></div>
+  <div class="ann">No screen change: the staging canvas stays the seed surface (works TODAY, no backend ask). Rail holds intent + toggles + one CTA, then collapses into the session chrome at start. Least ceremony, weakest “front door” moment.</div>
+</div>
+</div>
+
+<p class="dv-sub">C · Steer bar + question card interaction states</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1g">
+  <div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Steer lifecycle — whisper, echo, honest failure</div>
+  <div class="dv-card"><div class="wf" style="width:560px;padding:14px;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;gap:10px;align-items:center"><span style="width:56px;font-size:11px;color:#8a877f">idle</span>
+      <div class="dkbar" style="flex:1;height:28px;border-radius:7px;padding:0 10px;font-size:12px;color:#8a8d95">Whisper a steer… (“zoom into the risks”)</div></div>
+    <div style="display:flex;gap:10px;align-items:center"><span style="width:56px;font-size:11px;color:#8a877f">typing</span>
+      <div class="dkbar" style="flex:1;height:28px;border-radius:7px;padding:0 10px;font-size:12px;border:1.6px solid #FF6B35">group these by owner<span style="margin-left:auto;color:#8a8d95">↵ send</span></div></div>
+    <div style="display:flex;gap:10px;align-items:center"><span style="width:56px;font-size:11px;color:#8a877f">applied</span>
+      <div class="dkbar" style="flex:1;height:28px;border-radius:7px;padding:0 10px;font-size:12px;color:#67d08a">✓ Steering: group these by owner <span style="margin-left:auto;color:#6a6d75">fades in 3s</span></div></div>
+    <div style="display:flex;gap:10px;align-items:center"><span style="width:56px;font-size:11px;color:#8a877f">failed</span>
+      <div class="dkbar" style="flex:1;height:28px;border-radius:7px;padding:0 10px;font-size:12px;color:#e8946a">Steer didn’t land. <span style="text-decoration:underline">Try again</span> <span style="margin-left:auto;color:#e8946a">(backend ask: nudge:failed)</span></div></div>
+    <div style="border-top:1.5px dashed #d9d6cf;margin:4px 0"></div>
+    <div style="display:flex;gap:12px">
+      <div class="box" style="width:210px;padding:8px 10px;border-width:2px">
+        <div style="font-size:12px;margin-bottom:6px">Whose objection was pricing?</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap"><span class="chip">Sarah</span><span class="chip">the CFO</span><span class="chip" style="border-style:dashed;color:#8a877f">skip</span></div>
+        <div style="height:3px;background:#eceae5;border-radius:2px;margin-top:8px"><div style="width:40%;height:3px;background:#FF6B35;border-radius:2px"></div></div>
+      </div>
+      <div class="ann" style="flex:1">Question card: 2–3 tap answers max, “skip” always present, thin timeout bar drains ~20s then self-dismisses (counts as skip). Esc dismisses. Never stacks — one card at a time, newest wins.</div>
+    </div>
+  </div></div>
+  <div class="ann">Steer = the primary mid-meeting control everywhere. Send ↵, get an explicit echo of what the agent heard. Failure is honest and one-tap retryable.</div>
+</div>
+</div>
+
+<p class="dv-sub">D · Review state — the artifact you walk away with</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1h">
+  <div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>The Debrief — canvas + what got decided</div>
+  <div class="dv-card"><div class="wf" style="width:560px;height:340px">
+    <svg class="canvas-doodle" style="left:30px;top:40px" width="330" height="260" viewBox="0 0 330 260" fill="none" stroke="#b8b5ad" stroke-width="1.6">
+      <rect x="10" y="10" width="90" height="40" rx="6"></rect><rect x="120" y="10" width="90" height="40" rx="6"></rect><rect x="230" y="10" width="90" height="40" rx="6"></rect>
+      <path d="M100 30 L118 30"></path><path d="M210 30 L228 30"></path>
+      <rect x="60" y="100" width="200" height="60" rx="8"></rect>
+      <ellipse cx="160" cy="210" rx="90" ry="32"></ellipse>
+    </svg>
+    <div class="dkbar" style="position:absolute;right:0;top:0;bottom:0;width:180px;border-radius:0;padding:14px 12px;flex-direction:column;align-items:stretch;gap:9px">
+      <div style="font-family:'Shantell Sans';font-weight:600;font-size:13px">Session review · 47 min</div>
+      <div>
+        <div style="font-size:10px;color:#FF6B35;margin-bottom:4px">WHAT GOT DECIDED</div>
+        <span class="ln" style="background:#3a3d45;width:90%"></span><span class="ln" style="background:#3a3d45;width:75%;margin-top:5px"></span><span class="ln" style="background:#3a3d45;width:85%;margin-top:5px"></span>
+      </div>
+      <div>
+        <div style="font-size:10px;color:#9a9da5;margin-bottom:4px">SUMMARY</div>
+        <span class="ln" style="background:#2e3138;width:100%"></span><span class="ln" style="background:#2e3138;width:92%;margin-top:5px"></span><span class="ln" style="background:#2e3138;width:60%;margin-top:5px"></span>
+        <div style="font-size:9.5px;color:#e8946a;margin-top:4px">backend ask: summary + decisions extraction turn</div>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:6px"><span class="btn" style="background:transparent;color:#e8e6e1;border-color:#4a4d55;font-size:11px;flex:1">PNG</span><span class="btn" style="background:transparent;color:#e8e6e1;border-color:#4a4d55;font-size:11px;flex:1">SVG</span><span class="btn" style="background:transparent;color:#e8e6e1;border-color:#4a4d55;font-size:11px;flex:1">Copy text</span></div>
+      <div style="font-size:11px;color:#8a8d95;text-decoration:underline">Browse snapshots (later)</div>
+      <div class="btn ember" style="height:26px;font-size:12px">New session</div>
+    </div>
+    <div style="position:absolute;left:14px;top:10px" class="chip">Reviewing — canvas still editable</div>
+  </div></div>
+  <div class="ann">One right panel: decided-list first (the screenshot-into-email payload), summary under it, exports grow here. Canvas stays editable for cleanup. Both text blocks need a backend extraction turn — flagged.</div>
+</div>
+</div>
+
+<p class="dv-next">Try next: “go hi-fi on <a class="dv-oid" href="#1a">1a</a> + <a class="dv-oid" href="#1d">1d</a>” · “mix <a class="dv-oid" href="#1f">1f</a>’s no-ceremony setup with <a class="dv-oid" href="#1b">1b</a>’s halo” · “more listening-state ideas”</p>
+</section>
+
+</x-dc>
+</body>
+</html>
