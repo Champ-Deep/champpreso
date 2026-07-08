@@ -187,7 +187,7 @@ export async function startServer(options) {
       // exactly the bytes warmup wrote to cache.
       primingMessages: WARMUP_PRIMING_MESSAGES,
     });
-    broadcast(wss, { type: "mode", mode: toWireMode(state.mode) });
+    broadcast(wss, { type: "mode", mode: state.mode, lifecycleMode: toWireMode(state.mode) });
     broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     broadcastCost(wss, state);
     res.json({ ok: true });
@@ -201,7 +201,7 @@ export async function startServer(options) {
   app.post("/api/session/back-to-staging", (_req, res) => {
     state.backToStaging();
     transcription.setSessionContext({ keywords: [] });
-    broadcast(wss, { type: "mode", mode: toWireMode(state.mode) });
+    broadcast(wss, { type: "mode", mode: state.mode, lifecycleMode: toWireMode(state.mode) });
     res.json({ ok: true });
   });
 
@@ -377,7 +377,7 @@ export async function startServer(options) {
       client.send(JSON.stringify({ type: "settings", settings: sanitized }));
     }
     client.send(JSON.stringify({ type: "agent:status", status: state.agentStatus }));
-    client.send(JSON.stringify({ type: "mode", mode: toWireMode(state.mode) }));
+    client.send(JSON.stringify({ type: "mode", mode: state.mode, lifecycleMode: toWireMode(state.mode) }));
     client.send(JSON.stringify({ type: "warmup", ...state.warmupState }));
     client.send(JSON.stringify({ type: "cost", ...state.cost.getSummary() }));
     if (state.mode === "live") {

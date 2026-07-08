@@ -140,7 +140,8 @@ test("websocket clients receive the current agent status on connect", async () =
       ["config", "agent:status", "mode", "warmup", "cost"],
     );
     assert.equal(messages[1].status, "idle");
-    assert.equal(messages[2].mode, "setup");
+    assert.equal(messages[2].mode, "staging");
+    assert.equal(messages[2].lifecycleMode, "setup");
     assert.equal(messages[3].state, "idle");
     assert.equal(messages[4].agent.cost, 0);
     assert.equal(messages[4].transcription.cost, 0);
