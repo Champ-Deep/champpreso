@@ -78,6 +78,15 @@ export async function startServer(options) {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
   app.use(express.static(PUBLIC_DIR));
+  // Endpoint rename: preso/* -> session/*. Kept as a transparent alias for one
+  // release so existing clients (and the frontend redesign, mid-migration)
+  // don't break. See docs/design-handoff/04-BACKEND-ROADMAP.md item 4.
+  app.use((req, _res, next) => {
+    if (req.path.startsWith("/api/preso/")) {
+      req.url = "/api/session/" + req.url.slice("/api/preso/".length);
+    }
+    next();
+  });
 
   const httpServer = createHttpServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -123,7 +132,7 @@ export async function startServer(options) {
     res.json({ ok: true });
   });
 
-  app.post("/api/preso/start", async (req, res) => {
+  app.post("/api/session/start", async (req, res) => {
     const { stagingElements, stagingScreenshot } = req.body ?? {};
     if (!Array.isArray(stagingElements)) {
       return res.status(400).json({ error: "stagingElements (array) is required." });
@@ -184,12 +193,12 @@ export async function startServer(options) {
     res.json({ ok: true });
   });
 
-  app.post("/api/preso/warmup/cancel", (_req, res) => {
+  app.post("/api/session/warmup/cancel", (_req, res) => {
     state.cancelWarmup();
     res.json({ ok: true });
   });
 
-  app.post("/api/preso/back-to-staging", (_req, res) => {
+  app.post("/api/session/back-to-staging", (_req, res) => {
     state.backToStaging();
     transcription.setSessionContext({ keywords: [] });
     broadcast(wss, { type: "mode", mode: state.mode });
@@ -197,7 +206,7 @@ export async function startServer(options) {
   });
 
   // v0.11.0: toggle Smart STT cleanup (transcript hygiene).
-  app.post("/api/preso/smart-stt", express.json(), (req, res) => {
+  app.post("/api/session/smart-stt", express.json(), (req, res) => {
     const enabled = !!req.body?.enabled;
     state.setSmartStt(enabled);
     res.json({ ok: true, enabled });
@@ -205,7 +214,7 @@ export async function startServer(options) {
 
   // v0.9.0: Undo the last agent turn. Pops the turnHistory snapshot taken
   // just before runAgent and restores state.elements to that state.
-  app.post("/api/preso/undo-turn", (_req, res) => {
+  app.post("/api/session/undo-turn", (_req, res) => {
     if (state.mode !== "live") return res.status(409).json({ error: "Not in PRESO mode." });
     const result = state.undoLastAgentTurn();
     if (!result.ok) return res.status(400).json({ error: `Cannot undo: ${result.reason}` });
@@ -235,7 +244,7 @@ export async function startServer(options) {
     res.json({ ok: true, restored: snap.elements.length, savedAt: snap.savedAt });
   });
 
-  app.post("/api/preso/interrupt", (_req, res) => {
+  app.post("/api/session/interrupt", (_req, res) => {
     if (state.mode !== "live") return res.status(409).json({ error: "Not in PRESO mode." });
     state.interruptCurrentTurn("user-interrupt");
     res.json({ ok: true });
@@ -243,31 +252,31 @@ export async function startServer(options) {
 
   // v0.8.0: Pin / unpin canvas elements. The agent's system prompt receives
   // the pinned ID list every turn and is told not to modify or delete them.
-  app.post("/api/preso/pin", express.json(), (req, res) => {
+  app.post("/api/session/pin", express.json(), (req, res) => {
     const id = String(req.body?.id ?? "").trim();
     if (!id) return res.status(400).json({ error: "id required" });
     state.pinElement(id);
     res.json({ ok: true, pinned: Array.from(state.pinnedIds) });
   });
-  app.post("/api/preso/unpin", express.json(), (req, res) => {
+  app.post("/api/session/unpin", express.json(), (req, res) => {
     const id = String(req.body?.id ?? "").trim();
     if (!id) return res.status(400).json({ error: "id required" });
     state.unpinElement(id);
     res.json({ ok: true, pinned: Array.from(state.pinnedIds) });
   });
-  app.post("/api/preso/pins/clear", (_req, res) => {
+  app.post("/api/session/pins/clear", (_req, res) => {
     state.clearPins();
     res.json({ ok: true });
   });
 
   // Pause / resume the transcript capture without ending the preso. Used by
   // the side-panel Pause Capture button.
-  app.post("/api/preso/pause", (_req, res) => {
+  app.post("/api/session/pause", (_req, res) => {
     if (state.mode !== "live") return res.status(409).json({ error: "Not in PRESO mode." });
     state.pauseCapture();
     res.json({ ok: true, paused: true });
   });
-  app.post("/api/preso/resume", (_req, res) => {
+  app.post("/api/session/resume", (_req, res) => {
     if (state.mode !== "live") return res.status(409).json({ error: "Not in PRESO mode." });
     state.resumeCapture();
     res.json({ ok: true, paused: false });
@@ -275,7 +284,7 @@ export async function startServer(options) {
   // Answer a clarifying question raised by the agent's ask_user_question tool.
   // The answer flows into agentHistory as a normal user message so the next
   // agent turn picks it up.
-  app.post("/api/preso/answer", express.json(), (req, res) => {
+  app.post("/api/session/answer", express.json(), (req, res) => {
     if (state.mode !== "live") return res.status(409).json({ error: "Not in PRESO mode." });
     const { id, text } = req.body ?? {};
     const result = state.answerQuestion({ id, text });
@@ -284,7 +293,7 @@ export async function startServer(options) {
   });
   // Mid-session steering. Inject a one-line nudge into the next agent turn
   // as a system-side directive. Active only while PRESO is live.
-  app.post("/api/preso/nudge", express.json(), (req, res) => {
+  app.post("/api/session/nudge", express.json(), (req, res) => {
     if (state.mode !== "live") {
       broadcast(wss, { type: "nudge:failed", reason: "not-live", timestamp: new Date().toISOString() });
       return res.status(409).json({ error: "Not in PRESO mode. Start a preso first." });
@@ -306,7 +315,7 @@ export async function startServer(options) {
   // their current line numbers, record the scope, and fire a turn whose
   // transcript is the instruction. A hard backstop in runWhiteboardAgent
   // restores any unselected element the agent touches.
-  app.post("/api/preso/scoped-edit", express.json(), (req, res) => {
+  app.post("/api/session/scoped-edit", express.json(), (req, res) => {
     if (state.mode !== "live") {
       return res.status(409).json({ error: "Not in PRESO mode. Start a preso first." });
     }
@@ -331,7 +340,7 @@ export async function startServer(options) {
   // v0.15.0: typed turn. A no-voice path to capture an idea and have the agent
   // diagram it - the typed text is queued as a normal transcript turn. Useful
   // when typing is faster/cleaner than speaking, or STT is unavailable.
-  app.post("/api/preso/say", express.json(), (req, res) => {
+  app.post("/api/session/say", express.json(), (req, res) => {
     if (state.mode !== "live") {
       return res.status(409).json({ error: "Not in PRESO mode. Start a preso first." });
     }
