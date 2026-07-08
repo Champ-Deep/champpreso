@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { startServer } from "../src/server.js";
+import { startServer, BOOT_WARMUP_MESSAGE } from "../src/server.js";
 
 function makeTranscriptionMock() {
   const factory = () => ({
@@ -171,6 +171,91 @@ test("alwaysWarm: true re-warms (debounced) when agentInstructions changes via P
 
     await new Promise((r) => setTimeout(r, 40)); // past the 10ms debounce
     assert.ok(seenInstructions.length > callsBeforeChange, "settings change should trigger a re-warm call");
+  } finally {
+    httpServer.close();
+  }
+});
+
+test("a re-warm scheduled while staging does not clobber a live session started before the debounce fires", async () => {
+  const transcription = makeTranscriptionMock();
+  let calls = 0;
+
+  const settings = {
+    agent: {
+      provider: "openai",
+      openai: { model: "gpt-5.5", reasoningEffort: "low" },
+    },
+    transcription: {
+      provider: "moonshine",
+      moonshine: { model: "medium" },
+      openai: { model: "gpt-realtime-whisper" },
+    },
+    apiKeys: { openai: "sk-test" },
+    agentInstructions: "Get to a concrete Q3 plan",
+  };
+
+  const { httpServer, url, state } = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    moonshineModel: "medium",
+    openaiApiKey: "test",
+    createTranscription: transcription.factory,
+    alwaysWarm: true,
+    reWarmDebounceMs: 30,
+    settingsStore: {
+      load: async () => settings,
+      save: async (patch) => Object.assign(settings, patch),
+      getSanitized: async () => {
+        const { apiKeys, ...rest } = settings;
+        return rest;
+      },
+    },
+    generateTextFn: async () => {
+      calls += 1;
+      return { text: "UNDERSTOOD", finishReason: "stop" };
+    },
+    streamTextFn: () => ({ consumeStream: async () => {} }),
+    warmupMaxAttempts: 1,
+    warmupDelays: [],
+  });
+  try {
+    await new Promise((r) => setTimeout(r, 20)); // let boot warmup finish
+
+    // Edit agent instructions while still in staging - schedules a re-warm
+    // debounced 30ms out.
+    const putRes = await fetch(`${url}/api/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentInstructions: "Map every objection in this call" }),
+    });
+    assert.equal(putRes.status, 200);
+
+    // Before the debounce fires, click "Start listening" - this flips the
+    // session live and installs its own primer/history synchronously.
+    const startRes = await fetch(`${url}/api/preso/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stagingElements: [] }),
+    });
+    assert.equal(startRes.status, 200);
+    assert.equal(state.mode, "live", "starting the preso should flip mode to live synchronously");
+
+    const liveHistoryBeforeTimer = state.agentHistory;
+
+    // Wait past the 30ms debounce window so the stale re-warm timer fires.
+    await new Promise((r) => setTimeout(r, 80));
+
+    assert.equal(state.mode, "live", "session should still be live");
+    assert.notEqual(
+      state.agentHistory[0],
+      BOOT_WARMUP_MESSAGE,
+      "the stale re-warm timer must not overwrite the live session's primer with the boot warmup message",
+    );
+    assert.deepEqual(
+      state.agentHistory,
+      liveHistoryBeforeTimer,
+      "the live session's agentHistory must be untouched by the stale re-warm timer",
+    );
   } finally {
     httpServer.close();
   }

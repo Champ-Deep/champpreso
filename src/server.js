@@ -466,6 +466,7 @@ export async function startServer(options) {
     if (reWarmTimer) clearTimeout(reWarmTimer);
     reWarmTimer = setTimeout(() => {
       reWarmTimer = null;
+      if (state.mode === "live") return; // session went live while this timer was pending
       state.agentInstructions = typeof agentInstructions === "string" ? agentInstructions : "";
       state.agentHistory = [BOOT_WARMUP_MESSAGE];
       state.startWarmupLoop({
