@@ -348,6 +348,7 @@ export async function startServer(options) {
       res.json({ settings: sanitized, transcriptionEngine: transcription.getLabel() });
       broadcast(wss, { type: "settings", settings: sanitized });
       broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
+      scheduleReWarm(sanitized.agentInstructions);
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
@@ -422,6 +423,7 @@ export async function startServer(options) {
           const sanitized = await options.settingsStore.getSanitized();
           broadcast(wss, { type: "settings", settings: sanitized });
           broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
+          scheduleReWarm(sanitized.agentInstructions);
         } catch (error) {
           client.send(JSON.stringify({ type: "error", message: `Failed to apply settings: ${error.message}` }));
         }
@@ -454,6 +456,36 @@ export async function startServer(options) {
       maxAttempts: options.warmupMaxAttempts,
       primingMessages: WARMUP_PRIMING_MESSAGES,
     });
+  }
+
+  const reWarmDebounceMs = options.reWarmDebounceMs ?? 1500;
+  let reWarmTimer = null;
+  function scheduleReWarm(agentInstructions) {
+    if (!alwaysWarm) return;
+    if (state.mode === "live") return; // a live session already has its own warmup lifecycle
+    if (reWarmTimer) clearTimeout(reWarmTimer);
+    reWarmTimer = setTimeout(() => {
+      reWarmTimer = null;
+      state.agentInstructions = typeof agentInstructions === "string" ? agentInstructions : "";
+      state.agentHistory = [BOOT_WARMUP_MESSAGE];
+      state.startWarmupLoop({
+        runOnce: ({ attempt }) =>
+          runWhiteboardWarmupOnce({
+            state,
+            options,
+            wss,
+            attempt,
+            generateTextFn: options.generateTextFn ?? generateText,
+            streamTextFn: options.streamTextFn ?? streamText,
+          }).catch((error) => {
+            console.error(`Re-warm attempt ${attempt} failed:`, error);
+            return { usage: { input: 0, cached: 0, output: 0, reasoning: 0 } };
+          }),
+        delays: options.warmupDelays,
+        maxAttempts: options.warmupMaxAttempts,
+        primingMessages: WARMUP_PRIMING_MESSAGES,
+      });
+    }, reWarmDebounceMs);
   }
 
   return {

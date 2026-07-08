@@ -114,3 +114,64 @@ test("alwaysWarm omitted (default false) does not fire a warmup turn on boot", a
     httpServer.close();
   }
 });
+
+test("alwaysWarm: true re-warms (debounced) when agentInstructions changes via PUT /api/settings, before Start listening", async () => {
+  const transcription = makeTranscriptionMock();
+  const seenInstructions = [];
+
+  // Build a minimal but valid settings store
+  const settings = {
+    agent: {
+      provider: "openai",
+      openai: { model: "gpt-5.5", reasoningEffort: "low" },
+    },
+    transcription: {
+      provider: "moonshine",
+      moonshine: { model: "medium" },
+      openai: { model: "gpt-realtime-whisper" },
+    },
+    apiKeys: { openai: "sk-test" },
+    agentInstructions: "Get to a concrete Q3 plan",
+  };
+
+  const { httpServer, url } = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    moonshineModel: "medium",
+    openaiApiKey: "test",
+    createTranscription: transcription.factory,
+    alwaysWarm: true,
+    reWarmDebounceMs: 10,
+    settingsStore: {
+      load: async () => settings,
+      save: async (patch) => Object.assign(settings, patch),
+      getSanitized: async () => {
+        const { apiKeys, ...rest } = settings;
+        return rest;
+      },
+    },
+    generateTextFn: async () => {
+      seenInstructions.push("called");
+      return { text: "UNDERSTOOD", finishReason: "stop" };
+    },
+    streamTextFn: () => ({ consumeStream: async () => {} }),
+    warmupMaxAttempts: 1,
+    warmupDelays: [],
+  });
+  try {
+    await new Promise((r) => setTimeout(r, 20)); // let boot warmup finish
+    const callsBeforeChange = seenInstructions.length;
+
+    const res = await fetch(`${url}/api/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentInstructions: "Map every objection in this call" }),
+    });
+    assert.equal(res.status, 200);
+
+    await new Promise((r) => setTimeout(r, 40)); // past the 10ms debounce
+    assert.ok(seenInstructions.length > callsBeforeChange, "settings change should trigger a re-warm call");
+  } finally {
+    httpServer.close();
+  }
+});
