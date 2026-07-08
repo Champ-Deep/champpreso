@@ -633,7 +633,13 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   state.canvasDirtyForAgent = false;
   // v0.15.0: scoped edit. Capture the scope + a pre-turn element snapshot so the
   // hard backstop below can restore any unselected element the agent touches.
-  const scopedEditForTurn = state.scopedEdit;
+  // Re-validate lineNumbers against the canvas as of execution: the value
+  // frozen at HTTP-request time may be stale if another turn ran first and
+  // renumbered the canvas via insertions/deletions.
+  const scopedEditForTurn = state.scopedEdit
+    ? { ...state.scopedEdit, lineNumbers: mapSelectedIdsToLineNumbers(state.elements, state.scopedEdit.selectedIds) }
+    : null;
+  if (scopedEditForTurn) state.scopedEdit = scopedEditForTurn;
   const scopedBeforeElements = scopedEditForTurn ? [...state.elements] : null;
   const rawMessages = buildWhiteboardAgentMessages({
     elements: state.elements,
