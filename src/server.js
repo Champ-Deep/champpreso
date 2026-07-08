@@ -428,6 +428,30 @@ export async function startServer(options) {
   await new Promise((resolve) => httpServer.listen(options.port, options.host, () => resolve(undefined)));
   const address = httpServer.address();
   const port = typeof address === "object" && address ? address.port : options.port;
+
+  const alwaysWarm = options.alwaysWarm ?? false;
+  if (alwaysWarm) {
+    state.agentHistory = [BOOT_WARMUP_MESSAGE];
+    state.startWarmupLoop({
+      runOnce: ({ attempt }) =>
+        runWhiteboardWarmupOnce({
+          state,
+          options,
+          wss,
+          attempt,
+          generateTextFn: options.generateTextFn ?? generateText,
+          streamTextFn: options.streamTextFn ?? streamText,
+        }).catch((error) => {
+          console.error(`Boot warmup attempt ${attempt} failed:`, error);
+          options.onAgentEvent?.({ type: "warmup:error", attempt, error: error.message, timestamp: new Date().toISOString() });
+          return { usage: { input: 0, cached: 0, output: 0, reasoning: 0 } };
+        }),
+      delays: options.warmupDelays,
+      maxAttempts: options.warmupMaxAttempts,
+      primingMessages: WARMUP_PRIMING_MESSAGES,
+    });
+  }
+
   return {
     app,
     httpServer,
@@ -862,6 +886,11 @@ export const WARMUP_USER_MESSAGE = {
 };
 export const WARMUP_ASSISTANT_REPLY = { role: "assistant", content: "UNDERSTOOD" };
 export const WARMUP_PRIMING_MESSAGES = [WARMUP_USER_MESSAGE, WARMUP_ASSISTANT_REPLY];
+
+export const BOOT_WARMUP_MESSAGE = {
+  role: "user",
+  content: "Speaker turn:\n(boot warmup - server just started, no session yet; confirm readiness by responding UNDERSTOOD without calling tools)",
+};
 
 export async function runWhiteboardWarmupOnce({ state, options, wss = null, attempt = 1, generateTextFn = generateText, streamTextFn = streamText }) {
   if (!Array.isArray(state.agentHistory) || state.agentHistory.length === 0) return undefined;
