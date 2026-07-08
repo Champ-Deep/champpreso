@@ -352,6 +352,45 @@ export async function startServer(options) {
     res.json({ ok: true, text });
   });
 
+  app.post("/api/session/seed", express.json(), async (req, res) => {
+    if (state.mode === "live") {
+      return res.status(409).json({ error: "Cannot seed while a session is live." });
+    }
+    const text = String(req.body?.text ?? "").trim();
+    if (!text) {
+      return res.status(400).json({ error: "Seed text required." });
+    }
+    if (text.length > MAX_SEED_TEXT_CHARS) {
+      return res.status(400).json({ error: `Seed text must be ${MAX_SEED_TEXT_CHARS} characters or fewer.` });
+    }
+    const existingElements = Array.isArray(req.body?.existingElements)
+      ? normalizeWhiteboardElements(req.body.existingElements)
+      : [];
+    let settings;
+    try {
+      settings = options.settingsStore ? await options.settingsStore.load() : null;
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    state.elements = existingElements;
+    state.agentHistory = [];
+    state.agentInstructions = typeof settings?.agentInstructions === "string" ? settings.agentInstructions : "";
+    state.multiSpeaker = Boolean(settings?.multiSpeaker);
+    try {
+      await runWhiteboardAgent({
+        transcript: buildSeedingTranscript(text),
+        state,
+        wss,
+        options,
+        generateTextFn: options.generateTextFn ?? generateText,
+        streamTextFn: options.streamTextFn ?? streamText,
+      });
+    } catch (error) {
+      return res.status(500).json({ error: `Seeding turn failed: ${error.message}` });
+    }
+    res.json({ ok: true, elementCount: state.elements.length });
+  });
+
   app.put("/api/settings", async (req, res) => {
     if (!options.settingsStore) return res.status(404).json({ error: "Settings store not available." });
     try {
@@ -1342,6 +1381,15 @@ export function appendWhiteboardAgentHistory(agentHistory, { transcript }) {
 
 function formatSpeakerTurn(transcript) {
   return `Speaker turn:\n${transcript.trim()}`;
+}
+
+const MAX_SEED_TEXT_CHARS = 200_000;
+
+export function buildSeedingTranscript(text) {
+  return `The user is setting up before the session starts and dropped in notes to seed the canvas with. Lay this out as a well-organized starting structure - group related points, use a rough diagram or clustered layout where it helps, don't just dump a wall of text. Primarily organize what's given; only add connective structure (headers, groupings, light connecting arrows), not new unrelated content.
+
+Notes to lay out:
+${text}`;
 }
 
 export function buildStagingPrimerMessage({ stagingElements, stagingScreenshot, notesAndTranscripts = "" }) {
