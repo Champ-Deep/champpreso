@@ -142,6 +142,7 @@ export async function startServer(options) {
     const agentInstructions = typeof settings?.agentInstructions === "string" ? settings.agentInstructions : "";
     const notesAndTranscripts =
       typeof settings?.notesAndTranscripts === "string" ? settings.notesAndTranscripts : "";
+    const multiSpeaker = Boolean(settings?.multiSpeaker);
     const primerMessage = buildStagingPrimerMessage({
       stagingElements,
       stagingScreenshot,
@@ -155,7 +156,7 @@ export async function startServer(options) {
       state.cancelWarmup();
       await state.warmupPromise.catch(() => {});
     }
-    state.startPreso({ primerMessage, agentInstructions, notesAndTranscripts });
+    state.startPreso({ primerMessage, agentInstructions, notesAndTranscripts, multiSpeaker });
     state.startWarmupLoop({
       runOnce: ({ attempt }) =>
         runWhiteboardWarmupOnce({
@@ -681,7 +682,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   // are text-only across these APIs. This keeps the staging context as a
   // first-class system instruction rather than a stale early user message.
   const primerText = extractPrimerText(state.agentHistory?.[0]);
-  const effectiveSystem = buildEffectiveSystemPrompt(baseSystem, primerText, state.agentInstructions);
+  const effectiveSystem = buildEffectiveSystemPrompt(baseSystem, primerText, state.agentInstructions, state.multiSpeaker);
   const messages = primerText ? reshapeMessagesForCodex(rawMessages) : rawMessages;
   options.onAgentEvent?.({ type: "model:start", transcript, system: effectiveSystem, messages, timestamp: new Date().toISOString() });
   const codexInstructions = agentProvider.provider === "codex" ? effectiveSystem : null;
@@ -948,7 +949,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
       ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
       : defaultWhiteboardAgentProvider(options));
   const primerText = extractPrimerText(state.agentHistory[0]);
-  const effectiveSystem = buildEffectiveSystemPrompt(baseSystem, primerText, state.agentInstructions);
+  const effectiveSystem = buildEffectiveSystemPrompt(baseSystem, primerText, state.agentInstructions, state.multiSpeaker);
 
   // Each warmup attempt sends the IDENTICAL prefix [primer, WARMUP_USER_MESSAGE]
   // so attempt N hits the cache that attempt N-1 wrote. We must NOT mutate
@@ -1249,11 +1250,14 @@ function createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem) {
   };
 }
 
-export function buildEffectiveSystemPrompt(systemPrompt, primerText, userInstructions = "") {
+export function buildEffectiveSystemPrompt(systemPrompt, primerText, userInstructions = "", multiSpeaker = false) {
   let result = systemPrompt;
   const trimmedUserInstructions = typeof userInstructions === "string" ? userInstructions.trim() : "";
   if (trimmedUserInstructions) {
     result = `${result}\n\nUser instructions:\n${trimmedUserInstructions}`;
+  }
+  if (multiSpeaker) {
+    result = `${result}\n\nMultiple speakers: this session has more than one person talking. Track who is saying what where it matters (e.g. label contributions or use distinct visual grouping per speaker) rather than assuming a single voice.`;
   }
   if (primerText) {
     result = `${result}\n\n${primerText}`;

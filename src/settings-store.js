@@ -63,8 +63,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     onboarding: true,
     // Dark panel vs light panel. Aegis defaults to dark.
     panelTheme: "dark", // "dark" | "light"
-    // v0.7.0: Session Mode. Three behaviors the agent adapts to.
-    sessionMode: "strategy", // "strategy" | "presentation" | "cothinking"
+    // Multiple speakers in the room. When true, the agent is told to track
+    // and attribute distinct voices instead of assuming one speaker.
+    multiSpeaker: false,
     // Provider fallback chain. When the primary provider errors or times out,
     // the server tries the next in this list. Empty entries are skipped.
     providerFallback: ["groq", "openrouter", "openai", "ollama"],

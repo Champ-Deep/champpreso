@@ -63,9 +63,6 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     // v0.7.0: agent's declared current zone (SKETCHES/STRUCTURED/NOTES). The
     // frontend renders a small floating chip on the canvas showing this.
     activeZone: "structured",
-    // Session Mode snapshot. Frozen at startPreso so the cached system prompt
-    // prefix stays stable; mid-preso changes only take effect on next preso.
-    sessionMode: "strategy",
     // v0.8.0: pinned element IDs. The agent is instructed not to modify or
     // delete these. Mutated by /api/preso/pin and /api/preso/unpin.
     pinnedIds: new Set(),
@@ -411,7 +408,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   state.clearScopedEdit = () => {
     state.scopedEdit = null;
   };
-  state.startPreso = ({ primerMessage, agentInstructions = "", notesAndTranscripts = "" }) => {
+  state.startPreso = ({ primerMessage, agentInstructions = "", notesAndTranscripts = "", multiSpeaker = false }) => {
     state.endSession();
     state.mode = "live";
     state.elements = seedElements();
@@ -419,6 +416,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.agentHistory = [primerMessage];
     state.agentInstructions = typeof agentInstructions === "string" ? agentInstructions : "";
     state.notesAndTranscripts = typeof notesAndTranscripts === "string" ? notesAndTranscripts : "";
+    state.multiSpeaker = Boolean(multiSpeaker);
     state.warmupPromise = Promise.resolve();
     state.canvasDirtyForAgent = false;
     state.cost.reset();

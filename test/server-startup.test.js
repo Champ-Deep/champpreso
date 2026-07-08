@@ -3,7 +3,40 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { WebSocket } from "ws";
 
-import { DEFAULT_AGENT_TIMEOUT_MS, runWhiteboardAgent, startServer, whiteboardSystemPrompt } from "../src/server.js";
+import {
+  buildEffectiveSystemPrompt,
+  DEFAULT_AGENT_TIMEOUT_MS,
+  runWhiteboardAgent,
+  startServer,
+  whiteboardSystemPrompt,
+} from "../src/server.js";
+
+function makeTranscriptionMockForStartTestServer() {
+  const factory = () => ({
+    ready: async () => {},
+    sendAudio: () => {},
+    stop: () => {},
+    setSessionContext: () => {},
+    close: () => {},
+  });
+  return { factory };
+}
+
+async function startTestServer(extraOptions = {}) {
+  const transcription = makeTranscriptionMockForStartTestServer();
+  const defaults = {
+    host: "127.0.0.1",
+    port: 0,
+    moonshineModel: "medium",
+    openaiApiKey: "test",
+    createTranscription: transcription.factory,
+    generateTextFn: async () => ({ text: "DONE", finishReason: "stop" }),
+    streamTextFn: () => ({ consumeStream: async () => {} }),
+    warmupMaxAttempts: 1,
+    warmupDelays: [],
+  };
+  return startServer({ ...defaults, ...extraOptions });
+}
 
 test("default whiteboard agent timeout is 90 seconds", () => {
   assert.equal(DEFAULT_AGENT_TIMEOUT_MS, 90_000);
@@ -554,6 +587,40 @@ test("runWhiteboardAgent uses streaming for Codex responses", async () => {
   });
 
   assert.equal(consumed, true);
+});
+
+test("buildEffectiveSystemPrompt appends a multi-speaker paragraph only when multiSpeaker is true", () => {
+  const base = buildEffectiveSystemPrompt("BASE", "", "", false);
+  assert.doesNotMatch(base, /[Mm]ultiple speakers/);
+
+  const withFlag = buildEffectiveSystemPrompt("BASE", "", "", true);
+  assert.match(withFlag, /[Mm]ultiple speakers/);
+});
+
+test("POST /api/preso/start reads multiSpeaker from settings and threads it into startPreso", async () => {
+  const { httpServer, url, state } = await startTestServer({
+    settingsStore: {
+      load: async () => ({
+        agentInstructions: "",
+        notesAndTranscripts: "",
+        multiSpeaker: true,
+        transcription: { provider: "moonshine", moonshine: { model: "medium" }, openai: { model: "gpt-4o-mini-transcribe" } },
+        apiKeys: {},
+      }),
+      save: async () => {},
+      getSanitized: async () => ({}),
+    },
+  });
+  try {
+    await fetch(`${url}/api/preso/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stagingElements: [] }),
+    });
+    assert.equal(state.multiSpeaker, true);
+  } finally {
+    httpServer.close();
+  }
 });
 
 function collectWebSocketMessages(url, count) {
