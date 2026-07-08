@@ -54,7 +54,7 @@ Before the user speaks, `startWarmupLoop` repeatedly fires the agent against the
 
 ### Always-warm agent
 
-When `alwaysWarm: true` is passed to `startServer({...})` (e.g., CLI `--warm-on-boot` flag), the agent primes on boot against `BOOT_WARMUP_MESSAGE` before any session starts. This eliminates startup latency — mic capture and transcription can begin immediately. `scheduleReWarm()` debounced re-warming fires silently when `agentInstructions` or seed canvas change pre-session, with a built-in guard that cancels stale timers before the session goes live. The same fixed-history cache pattern is preserved; only the timing and trigger conditions change.
+When `alwaysWarm: true` is passed to `startServer({...})`, the agent primes on boot against `BOOT_WARMUP_MESSAGE` before any session starts. This eliminates startup latency — mic capture and transcription can begin immediately. `scheduleReWarm()` debounced re-warming fires silently on `agentInstructions` changes pre-session, with a built-in guard that cancels stale timers before the session goes live. The same fixed-history cache pattern is preserved; only the timing and trigger conditions change.
 
 ### Transcript turn queue (`src/transcript-turn-queue.js`)
 
