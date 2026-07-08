@@ -7,34 +7,35 @@
 
 The backend's only job is the loop: `speech → transcript → agent turn → canvas edit → broadcast`. Everything that exists to serve "presentation mode" gets deleted or folded. Simplicity first, per Champions build philosophy.
 
-## 1. Always-warm agent (fixes the missed-context problem) — TOP PRIORITY
+## 1. Always-warm agent (fixes the missed-context problem) — DONE in v0.17.1
 
-Today `POST /api/preso/start` kicks off a warmup loop (up to 8 attempts, exponential backoff) whose real purpose is prompt-cache priming. The user waits, and early conversation is missed.
+Shipped:
+- Warm on boot: `startServer({ alwaysWarm: true })` primes agent against `BOOT_WARMUP_MESSAGE` before session starts.
+- Re-warm on change: `scheduleReWarm()` debounced re-warming fires silently on `agentInstructions` changes pre-session, with stale-timer cancellation guard.
+- Capture from click one: mic capture and transcription begin immediately; buffered transcripts replayed into first turn.
+- Fixed-history pattern (`[primer, "UNDERSTOOD"]`) preserved for prompt-cache efficiency.
 
-Target:
+## 2. Seed ingestion (the "here's what we have so far" path) — DONE in v0.17.1
 
-1. **Warm on boot.** The moment the server starts, prime the agent against a neutral primer in the background. App open = agent warm.
-2. **Re-warm on change, silently.** When session intent, seed canvas, or agent settings change, re-prime in the background with debounce. Never block the UI.
-3. **Capture from click one.** Mic capture and transcription begin the instant the user hits Start listening. If the final primer swap is still in flight, buffer transcripts and replay them into the first turn. Zero speech lost, ever.
-4. Keep the fixed-history prompt-cache pattern (`[primer, "UNDERSTOOD"]`); it is why turns are cheap. The change is WHEN priming happens, not HOW.
+Shipped:
+- `POST /api/session/seed` accepts `{ text, existingElements? }`.
+- Agent runs one seeding turn with layout-focused prompt against `existingElements` (or blank canvas).
+- Rejects with 409 if `state.mode === "live"`.
 
-## 2. Seed ingestion (the "here's what we have so far" path)
+## 3. Reliable steering (fix the guiding options) — DONE in v0.17.1
 
-Today seeding = manually drawing/pasting on the staging canvas. Target: `POST /api/session/seed` accepts raw text (notes, bullets, a doc). The agent runs one seeding turn that lays it out on the canvas as structured starting state, before listening begins. Same agent, same tools, one-shot turn with a layout-focused prompt. This is the designer's Setup seed area.
+Shipped:
+- Nudge fix: `state.applyNudge` pushes `role: "user"` (not `role: "system"`) to avoid SDK warning/reject.
+- Scoped-edit fix: line numbers recomputed from live canvas at turn-execution time (inside `runWhiteboardAgent`), not frozen at HTTP-request time.
+- Steering acknowledgment: `nudge:failed` WS broadcast added on all three nudge rejection paths.
 
-## 3. Reliable steering (fix the guiding options)
+## 4. One lifecycle, session language (kill mode soup) — DONE in v0.17.1
 
-Known-unreliable paths: `nudge`, `scoped-edit`, and question flow. Plan:
-
-1. Reproduce failures with the existing simulation harness (`scripts/simulate-whiteboard-agent.js`) and add failing tests first (TDD, repo convention).
-2. Likely fixes: nudge text must survive turn buffering (currently can be swallowed when concatenated with queued speech), and scoped edits must re-validate line numbers against the canvas as of execution, not as of request.
-3. Steering acknowledgment: every steer gets an explicit `nudge:applied` or a new `nudge:failed` within one turn, so the UI can confirm honestly.
-
-## 4. One lifecycle, session language (kill mode soup)
-
-1. Collapse Strategy/Present/Co-think into the session intent plus a `multiSpeaker` boolean. Delete the per-mode prompt branches; fold the co-think speaker-tracking prompt into the base prompt behind the boolean.
-2. Rename endpoints `preso/*` → `session/*` with aliases kept one version for compatibility.
-3. `mode` values become `setup` / `listening` / `paused` / `review` (WS `mode` message carries the new vocabulary).
+Shipped:
+- Session intent + `multiSpeaker` boolean: replaces dead `sessionMode` setting; threaded through settings → `startPreso` → `buildEffectiveSystemPrompt`.
+- Endpoint rename: `/api/preso/*` routes renamed to `/api/session/*`, with old paths aliased via rewrite middleware for backwards compatibility.
+- WS mode additive (IMPORTANT): `mode` field still carries raw session mode (`"staging"`/`"live"`, unchanged), but new `lifecycleMode` field added to same `type: "mode"` message carrying renamed vocabulary (`"setup"`/`"listening"`) for frontend redesign adoption.
+- Deferred: `paused`/`review` mode-values follow-up (noted for later lifecycle expansion).
 
 ## 5. Data safety — DONE in v0.17.1, shipping with next restart
 

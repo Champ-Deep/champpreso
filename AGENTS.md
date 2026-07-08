@@ -42,13 +42,19 @@ The session has two modes that are NOT symmetric:
 - **`staging`** - client-side scratchpad. The server does not track elements in this mode; the frontend owns them. Used to seed the canvas with reference content before going live.
 - **`live`** - the server owns `state.elements` as the source of truth. Audio, screenshots, and user edits all flow into the server, which applies agent edits and broadcasts updates.
 
-Transitions: `POST /api/preso/start` builds a "staging primer" message (current scene snapshot + downscaled screenshot when staging is non-empty), extracts staging text/labels as transcription keywords, snapshots saved Agent instructions for the whole preso, resets session cost, and kicks off the warmup loop. `POST /api/preso/back-to-staging` returns to client-owned mode and clears the transcription keywords; `POST /api/session/reset` also clears them and resets session cost.
+Transitions: `POST /api/session/start` builds a "staging primer" message (current scene snapshot + downscaled screenshot when staging is non-empty), extracts staging text/labels as transcription keywords, snapshots saved Agent instructions for the whole preso, resets session cost, and kicks off the warmup loop. `POST /api/session/back-to-staging` returns to client-owned mode and clears the transcription keywords; `POST /api/session/reset` also clears them and resets session cost. **Note:** The old `/api/preso/*` paths are aliased to `/api/session/*` via rewrite middleware for backwards compatibility; new code should prefer `/api/session/*`.
 
 Audio messages carry a browser-generated `sessionId`. `stop`, reset, back-to-staging, and Start Preso invalidate the current session token so late audio frames, queued turns, stale tool executions, and post-turn history appends cannot mutate the next session; cost still records usage already incurred.
+
+**WS mode broadcast:** The `type: "mode"` WebSocket message carries both the raw session mode (`mode: "staging"` or `"live"`) and a new `lifecycleMode` field (`"setup"` or `"listening"`) for frontend redesign adoption. Both fields are present in the same message.
 
 ### Warmup loop
 
 Before the user speaks, `startWarmupLoop` repeatedly fires the agent against the staging primer and the Agent instructions snapshot with exponential backoff (`DEFAULT_WARMUP_DELAYS`, max 8 attempts). Its purpose is **prompt cache priming**: after the loop ends, `agentHistory` is forced to `[warmup_user_msg, assistant("UNDERSTOOD")]` so every subsequent turn reuses the same prefix bytes. Do not change this primer-then-fixed-history pattern or the per-preso instructions snapshot without understanding the cache implications.
+
+### Always-warm agent
+
+When `alwaysWarm: true` is passed to `startServer({...})` (e.g., CLI `--warm-on-boot` flag), the agent primes on boot against `BOOT_WARMUP_MESSAGE` before any session starts. This eliminates startup latency — mic capture and transcription can begin immediately. `scheduleReWarm()` debounced re-warming fires silently when `agentInstructions` or seed canvas change pre-session, with a built-in guard that cancels stale timers before the session goes live. The same fixed-history cache pattern is preserved; only the timing and trigger conditions change.
 
 ### Transcript turn queue (`src/transcript-turn-queue.js`)
 
