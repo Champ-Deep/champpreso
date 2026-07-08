@@ -2701,3 +2701,187 @@ button:disabled {
   color: #F4F5F7;
 }
 
+
+/* === CHAMPPRESO v0.15 PATCH START === */
+/* Transcript History readability */
+.status-card + div:has(> .lth-item),
+.live-transcript-history,
+.lth-list,
+.status-card,
+.session-cost-card + * {
+  overflow: visible !important;
+}
+/* Any element whose class contains 'transcript' or 'lth' */
+[class*="transcript"] {
+  overflow: visible !important;
+  white-space: normal !important;
+  text-overflow: unset !important;
+  word-break: break-word !important;
+  hyphens: auto !important;
+}
+[class*="transcript"] input,
+[class*="transcript"] textarea {
+  min-height: 34px !important;
+}
+/* Wrap any item that carries an ellipsis anywhere in the panel */
+.panel *[style*="text-overflow"],
+.panel *[style*="ellipsis"],
+.panel .value {
+  overflow: visible !important;
+  text-overflow: unset !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+}
+/* Panel toggle button z-index above export dropdown */
+.panel-toggle {
+  z-index: 200 !important;
+  pointer-events: auto !important;
+}
+/* Ensure buttons in the panel are always clickable */
+.panel button,
+.panel .export-menu,
+.panel .ui-settings-trigger,
+.panel .status-card,
+.panel .status-mini {
+  position: relative;
+  z-index: 5;
+}
+/* Live action row grid tightening so 4 buttons never wrap and overlap */
+.live-action-row {
+  min-width: 0;
+}
+.live-action-row > button {
+  min-width: 0;
+  overflow: hidden;
+}
+/* Kill any residual palette-row / caption-fab overlap from disabled features */
+.palette-row.hidden, .caption-fab.hidden { display: none !important; }
+/* === CHAMPPRESO v0.15 PATCH END === */
+
+/* === CHAMPPRESO v0.16 STREAMLINE START === */
+/* ---------- Hide clutter in PRESO mode ---------- */
+
+/* Kill the top-right Present/Work FAB entirely - captions are toggled off */
+.caption-fab { display: none !important; }
+
+/* In PRESO mode, session-mode tabs (Strategy/Present/Co-think) already
+   frozen for the session; hide them to reduce noise */
+.shell.mode-live .session-modes { display: none !important; }
+
+/* Hide the Staging/Preso mode toggle in PRESO - Stop button does the same */
+.shell.mode-live .mode-toggle { display: none !important; }
+
+/* Palette row was already user-disabled but kill it here too */
+.palette-row { display: none !important; }
+
+/* ---------- Surface transcript history ---------- */
+
+/* Reorder the panel: transcript history right below live-action-row.
+   Uses flex order so it moves without touching the DOM. */
+.panel { display: flex; flex-direction: column; }
+
+/* Any container that carries the phrase "TRANSCRIPT" or class name */
+[class*="transcript" i] {
+  order: 5 !important;
+  background: rgba(20, 23, 31, 0.55) !important;
+  border: 1px solid color-mix(in srgb, var(--p) 22%, var(--border-default)) !important;
+  border-radius: var(--r-lg) !important;
+  padding: 12px !important;
+  margin: 8px 0 !important;
+  max-height: 320px !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+}
+[class*="transcript" i]::before {
+  content: "📝 LIVE TRANSCRIPT";
+  display: block;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  color: var(--g, #FFB088);
+  margin-bottom: 6px;
+}
+
+/* Individual transcript items - wrap fully, add subtle separator */
+[class*="transcript" i] .lth-item,
+[class*="transcript" i] > div,
+[class*="lth-item"] {
+  padding: 6px 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+  font-size: 12.5px !important;
+  line-height: 1.45 !important;
+  color: var(--champ-cloud, #D1D5DB) !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  word-break: break-word !important;
+}
+
+/* The "Type a point to add to the board..." input */
+[class*="transcript" i] input[type="text"],
+[class*="transcript" i] textarea {
+  background: var(--champ-ink, #0B0D12) !important;
+  border: 1px solid var(--border-default, rgba(255,255,255,0.10)) !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  min-height: 34px !important;
+  width: 100% !important;
+  font-size: 13px !important;
+}
+
+/* Ensure Add button doesn't wrap awkwardly */
+[class*="transcript" i] button {
+  min-width: 60px;
+}
+
+/* ---------- Global clickability guards ---------- */
+.panel-toggle { z-index: 300 !important; pointer-events: auto !important; }
+.panel button, .panel .export-menu, .panel .status-card, .panel .status-mini {
+  position: relative;
+  z-index: 5;
+}
+.live-action-row > button { min-width: 0; overflow: hidden; }
+/* === CHAMPPRESO v0.16 STREAMLINE END === */
+
+/* === CHAMPPRESO v0.17 START === */
+/* Nuclear transcript surfacing. Match anything that could plausibly be the
+   transcript panel and force it visible + prominent. */
+[class*="transcript" i],
+[class*="Transcript" i],
+[data-testid*="transcript" i],
+.lth,
+.live-transcript,
+.status-card + div:has(input[placeholder*="board" i]) {
+  order: 2 !important;
+  display: flex !important;
+  flex-direction: column;
+  background: rgba(20, 23, 31, 0.75) !important;
+  border: 2px solid var(--p, #FF6B35) !important;
+  border-radius: 12px !important;
+  padding: 12px !important;
+  margin: 10px 0 !important;
+  max-height: 340px !important;
+  overflow-y: auto !important;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--p, #FF6B35) 22%, transparent) !important;
+}
+[class*="transcript" i]::before,
+.status-card + div:has(input[placeholder*="board" i])::before {
+  content: "📝 LIVE TRANSCRIPT — everyone's contributions land here";
+  display: block;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  color: var(--p, #FF6B35);
+  margin-bottom: 8px;
+}
+/* Force wrap and readable font */
+[class*="transcript" i] *, .status-card + div:has(input[placeholder*="board" i]) * {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  word-break: break-word !important;
+}
+/* === CHAMPPRESO v0.17 END === */

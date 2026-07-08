@@ -29,6 +29,47 @@ import {
   restoreUnselectedElements,
 } from "./whiteboard-tools.js";
 
+// === CHAMPPRESO v0.17 DISK PERSIST ===
+import fsSync from "node:fs";
+import osMod from "node:os";
+import pathMod from "node:path";
+const LAST_SESSION_PATH = pathMod.join(osMod.homedir(), ".config", "champpreso", "last-session.json");
+const SNAPSHOT_DIR = pathMod.join(osMod.homedir(), ".config", "champpreso", "snapshots");
+const SNAPSHOT_KEEP = 20;
+const SNAPSHOT_MIN_INTERVAL_MS = 60_000;
+let lastSnapshotAt = 0;
+function persistLastSession(elements) {
+    try {
+        // Guard: never overwrite a non-empty snapshot with an empty one
+        if (!Array.isArray(elements) || elements.length === 0) {
+            const existing = loadLastSession();
+            if (existing && Array.isArray(existing.elements) && existing.elements.length > 0) return;
+        }
+        const payload = JSON.stringify({ savedAt: Date.now(), elements }, null, 2);
+        fsSync.mkdirSync(pathMod.dirname(LAST_SESSION_PATH), { recursive: true });
+        fsSync.writeFileSync(LAST_SESSION_PATH, payload, { mode: 0o600 });
+        // Rolling timestamped snapshots: at most one per minute, keep the newest 20.
+        // last-session.json always has the latest state; these are history you can go back to.
+        const now = Date.now();
+        if (Array.isArray(elements) && elements.length > 0 && now - lastSnapshotAt >= SNAPSHOT_MIN_INTERVAL_MS) {
+            lastSnapshotAt = now;
+            fsSync.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+            const stamp = new Date(now).toISOString().replace(/[:.]/g, "-");
+            fsSync.writeFileSync(pathMod.join(SNAPSHOT_DIR, `${stamp}.json`), payload, { mode: 0o600 });
+            const files = fsSync.readdirSync(SNAPSHOT_DIR).filter((f) => f.endsWith(".json")).sort();
+            for (const f of files.slice(0, Math.max(0, files.length - SNAPSHOT_KEEP))) {
+                try { fsSync.unlinkSync(pathMod.join(SNAPSHOT_DIR, f)); } catch { /* ignore */ }
+            }
+        }
+    } catch (e) { /* best effort */ }
+}
+function loadLastSession() {
+    try {
+        if (!fsSync.existsSync(LAST_SESSION_PATH)) return null;
+        return JSON.parse(fsSync.readFileSync(LAST_SESSION_PATH, "utf8"));
+    } catch (e) { return null; }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 export const DEFAULT_AGENT_TIMEOUT_MS = 90_000;
@@ -77,7 +118,7 @@ export async function startServer(options) {
   app.post("/api/session/reset", (_req, res) => {
     state.reset();
     transcription.setSessionContext({ keywords: [] });
-    broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+    broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     broadcastCost(wss, state);
     res.json({ ok: true });
   });
@@ -133,7 +174,7 @@ export async function startServer(options) {
       primingMessages: WARMUP_PRIMING_MESSAGES,
     });
     broadcast(wss, { type: "mode", mode: state.mode });
-    broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+    broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     broadcastCost(wss, state);
     res.json({ ok: true });
   });
@@ -169,6 +210,26 @@ export async function startServer(options) {
   // v0.8.0: Interrupt the in-flight agent turn. The agent's tool execute
   // functions check state.interruptSignal.aborted and bail. Cleared on next
   // turn boundary by the queue.
+  
+  // v0.17: get the current in-memory canvas state (for browser-side backup)
+  app.get("/api/session/current-canvas", (_req, res) => {
+    res.json({ savedAt: Date.now(), elements: state.elements || [] });
+  });
+  // v0.17: restore from the last-session disk snapshot
+  app.get("/api/session/last-backup", (_req, res) => {
+    const snap = loadLastSession();
+    if (!snap) return res.status(404).json({ error: "No backup on disk" });
+    res.json(snap);
+  });
+  app.post("/api/session/restore-backup", (_req, res) => {
+    const snap = loadLastSession();
+    if (!snap || !Array.isArray(snap.elements)) return res.status(404).json({ error: "No usable backup" });
+    state.elements = snap.elements;
+    if (typeof state.canvasDirtyForAgent === "boolean") state.canvasDirtyForAgent = true;
+    broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+    res.json({ ok: true, restored: snap.elements.length, savedAt: snap.savedAt });
+  });
+
   app.post("/api/preso/interrupt", (_req, res) => {
     if (state.mode !== "live") return res.status(409).json({ error: "Not in PRESO mode." });
     state.interruptCurrentTurn("user-interrupt");
@@ -633,7 +694,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
           const normalizedElements = normalizeWhiteboardElements(elements);
           state.elements = normalizedElements;
           state.canvasDirtyForAgent = true;
-          broadcast(wss, { type: "whiteboard:update", elements: normalizedElements });
+          broadcast(wss, { type: "whiteboard:update", elements: normalizedElements }); persistLastSession(normalizedElements);
           const result = appendLayoutWarnings(formatLineNumberedWhiteboard(normalizedElements), normalizedElements);
           dumpToolCall("whiteboard_overwrite", { elementCount: elements.length, ids: elements.map((el) => el.id) }, normalizedElements.map((el) => el.id), result);
           options.onAgentEvent?.({ type: "tool:end", tool: "whiteboard_overwrite", result, elements: normalizedElements, timestamp: new Date().toISOString() });
@@ -671,7 +732,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             const nextElements = normalizeWhiteboardElements(applyWhiteboardEditOperations(state.elements, operations));
             state.elements = nextElements;
             state.canvasDirtyForAgent = true;
-            broadcast(wss, { type: "whiteboard:update", elements: nextElements });
+            broadcast(wss, { type: "whiteboard:update", elements: nextElements }); persistLastSession(nextElements);
             canvasResult = appendLayoutWarnings(formatLineNumberedWhiteboard(nextElements), nextElements);
           }
 
@@ -740,7 +801,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
       reconciled.some((element, index) => element !== state.elements[index]);
     if (changed) {
       state.elements = reconciled;
-      broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+      broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     }
   }
 
