@@ -285,14 +285,17 @@ export async function startServer(options) {
   // as a system-side directive. Active only while PRESO is live.
   app.post("/api/preso/nudge", express.json(), (req, res) => {
     if (state.mode !== "live") {
+      broadcast(wss, { type: "nudge:failed", reason: "not-live", timestamp: new Date().toISOString() });
       return res.status(409).json({ error: "Not in PRESO mode. Start a preso first." });
     }
     const text = String(req.body?.text ?? "").trim().slice(0, 500);
     if (!text) {
+      broadcast(wss, { type: "nudge:failed", reason: "empty-text", timestamp: new Date().toISOString() });
       return res.status(400).json({ error: "Nudge text required." });
     }
     const applied = state.applyNudge(text);
     if (!applied) {
+      broadcast(wss, { type: "nudge:failed", reason: "apply-failed", timestamp: new Date().toISOString() });
       return res.status(400).json({ error: "Nudge could not be applied." });
     }
     res.json({ ok: true, text });
@@ -493,6 +496,7 @@ export async function startServer(options) {
     app,
     httpServer,
     state,
+    wss,
     url: `http://${options.host}:${port}`,
   };
 }
