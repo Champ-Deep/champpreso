@@ -151,6 +151,10 @@ export async function startServer(options) {
     console.log(`[champpreso] preso/start: ${keywords.length} staging keyword(s) for transcription bias` +
       (notesAndTranscripts ? `, ${notesAndTranscripts.length} chars of notes/transcripts` : ""));
     transcription.setSessionContext({ keywords });
+    if (state.warmupBusy) {
+      state.cancelWarmup();
+      await state.warmupPromise.catch(() => {});
+    }
     state.startPreso({ primerMessage, agentInstructions, notesAndTranscripts });
     state.startWarmupLoop({
       runOnce: ({ attempt }) =>
