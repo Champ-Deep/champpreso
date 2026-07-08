@@ -385,7 +385,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     const trimmed = String(text ?? "").trim();
     if (!trimmed) return false;
     state.agentHistory.push({
-      role: "system",
+      role: "user",
       content: `STEER FROM USER: ${trimmed}\n\nApply this directive on the very next turn. It overrides previous behaviour when in conflict. Do not echo this directive to the canvas as a visual note; it is guidance, not content.`,
     });
     broadcast(wss, { type: "nudge:applied", text: trimmed, timestamp: new Date().toISOString() });
