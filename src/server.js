@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { generateText, stepCountIs, streamText, tool } from "ai";
+import { generateObject, generateText, stepCountIs, streamText, tool } from "ai";
 import express from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
@@ -73,6 +73,11 @@ function loadLastSession() {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 export const DEFAULT_AGENT_TIMEOUT_MS = 90_000;
+
+const SESSION_REVIEW_SCHEMA = z.object({
+  decisions: z.array(z.string().min(1).max(160)).max(6).describe("Concrete things the group decided or agreed on, most important first. Empty array if nothing was decided yet."),
+  summary: z.string().min(1).max(600).describe("A 2-4 sentence plain-language summary of what this session covered."),
+});
 
 export async function startServer(options) {
   const app = express();
@@ -389,6 +394,43 @@ export async function startServer(options) {
       return res.status(500).json({ error: `Seeding turn failed: ${error.message}` });
     }
     res.json({ ok: true, elementCount: state.elements.length });
+  });
+
+  app.post("/api/session/review", express.json(), async (req, res) => {
+    if (state.mode !== "live") {
+      return res.status(409).json({ error: "Review is only available for a session that has gone live." });
+    }
+    try {
+      const agentProvider = options.agentProvider
+        ?? (options.settingsStore
+          ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
+          : defaultWhiteboardAgentProvider(options));
+      const boardText = formatLineNumberedWhiteboard(state.elements);
+      const transcriptSoFar = state.agentHistory
+        .filter((m) => m.role === "user" && typeof m.content === "string")
+        .map((m) => m.content)
+        .join("\n\n");
+      const reviewPrompt = `You are summarizing a live brainstorm session for the person who ran it, right after they ended it.
+
+Canvas as it stands now (line-numbered):
+${boardText}
+
+Turn-by-turn record of what was said and drawn:
+${transcriptSoFar || "(nothing was said yet)"}
+
+Extract the concrete decisions this group actually made (not aspirations, not open questions - decided things), and write a short summary of what the session covered. If nothing concrete was decided, return an empty decisions array and say so plainly in the summary.`;
+      const generateObjectFn = options.generateObjectFn ?? generateObject;
+      const result = await generateObjectFn({
+        model: createWhiteboardAgentModel(agentProvider),
+        providerOptions: createWhiteboardAgentProviderOptions(agentProvider, "You extract concrete decisions and a short summary from a brainstorm session transcript. Be terse and concrete."),
+        schema: SESSION_REVIEW_SCHEMA,
+        prompt: reviewPrompt,
+      });
+      recordAgentCost(state, wss, agentProvider, result);
+      res.json({ ok: true, decisions: result.object.decisions, summary: result.object.summary });
+    } catch (error) {
+      res.status(500).json({ error: `Review summary failed: ${error.message}` });
+    }
   });
 
   app.put("/api/settings", async (req, res) => {
