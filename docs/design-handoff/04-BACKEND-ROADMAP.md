@@ -12,7 +12,7 @@ The backend's only job is the loop: `speech → transcript → agent turn → ca
 Shipped:
 - Warm on boot: `startServer({ alwaysWarm: true })` primes agent against `BOOT_WARMUP_MESSAGE` before session starts.
 - Re-warm on change: `scheduleReWarm()` debounced re-warming fires silently on `agentInstructions` changes pre-session, with stale-timer cancellation guard.
-- Capture from click one: mic capture and transcription begin immediately; buffered transcripts replayed into first turn.
+- Capture from click one: already in place before this pass (commit `a414f57`, first-turn warmup wait cap + transcript-queue buffering) — verified still correct, no changes needed here.
 - Fixed-history pattern (`[primer, "UNDERSTOOD"]`) preserved for prompt-cache efficiency.
 
 ## 2. Seed ingestion (the "here's what we have so far" path) — DONE in v0.17.1
