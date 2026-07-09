@@ -20,6 +20,14 @@ test("createSettingsStore returns defaults when file is missing and env is empty
   assert.equal(settings.agent.codex.model, "gpt-5.5-fast");
 });
 
+test("multiSpeaker default lives top-level, matching where server.js reads and the frontend writes it", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  const settings = await store.load();
+  assert.equal(settings.multiSpeaker, false);
+  assert.equal(DEFAULT_SETTINGS.multiSpeaker, false);
+  assert.ok(!("multiSpeaker" in DEFAULT_SETTINGS.ui), "multiSpeaker must not also live nested under ui - that copy is dead and never read");
+});
+
 test("createSettingsStore seeds settings from environment on first run", async () => {
   const store = createSettingsStore({
     filePath: await tempPath(),

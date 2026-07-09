@@ -37,6 +37,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // (roughly a 50-page transcript). The primer message will surface this to
   // the agent on every preso.
   notesAndTranscripts: "",
+  // Multiple speakers in the room. Top-level (not under ui) because
+  // server.js reads settings.multiSpeaker directly in POST /api/session/start
+  // and POST /api/session/seed, and the frontend Setup screen saves it
+  // top-level via saveSettings({ multiSpeaker }). When true, the agent is
+  // told to track and attribute distinct voices instead of assuming one
+  // speaker.
+  multiSpeaker: false,
   // UI preferences. Every Aegis-spec toggle so the user can adjust the entire
   // surface without editing CSS. Persisted via PUT /api/settings, rebroadcast
   // on every save so all WS clients converge instantly.
@@ -63,9 +70,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
     onboarding: true,
     // Dark panel vs light panel. Aegis defaults to dark.
     panelTheme: "dark", // "dark" | "light"
-    // Multiple speakers in the room. When true, the agent is told to track
-    // and attribute distinct voices instead of assuming one speaker.
-    multiSpeaker: false,
     // Provider fallback chain. When the primary provider errors or times out,
     // the server tries the next in this list. Empty entries are skipped.
     providerFallback: ["groq", "openrouter", "openai", "ollama"],
