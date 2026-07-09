@@ -3321,3 +3321,488 @@ button:disabled {
   width: 6px;
   height: 6px;
 }
+
+/* ============================================================================
+   === Listening / Paused screen (redesign "halo" layout) ===
+   Overlays the full-bleed canvas: a thin top status strip, a status drawer,
+   a floating question card, a caption pill, and a floating bottom steer bar.
+   Translated from docs/design-handoff/frontend-source/ChampPreso-Shell.dc.html
+   (TOP STATUS STRIP, STATUS DRAWER, QUESTION CARD, CAPTION PILL, STEER BAR).
+   ========================================================================== */
+
+/* ---- TOP STATUS STRIP ---- */
+.ls-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: rgba(11, 13, 18, 0.96);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  color: var(--champ-snow);
+  z-index: 20;
+}
+.ls-brand {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+.ls-brand-mark { color: var(--champ-ember); }
+.ls-strip-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.ls-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ls-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.ls-state-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+}
+.ls-clock {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--champ-mist);
+}
+.ls-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+.ls-wave span {
+  width: 2.5px;
+  background: var(--champ-ember);
+  border-radius: 2px;
+  height: 4px;
+}
+.ls-status-text {
+  font-size: 12px;
+  color: var(--champ-mist);
+}
+.ls-zone {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: var(--champ-cloud);
+}
+.ls-strip-spacer { flex: 1; }
+.ls-paused-note {
+  font-size: 12px;
+  color: var(--champ-mist);
+}
+.ls-resume {
+  height: 26px;
+  padding: 0 14px;
+  background: var(--champ-ember);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ls-resume:hover { background: var(--champ-ember-glow); }
+.ls-strip-btn {
+  height: 26px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: var(--champ-cloud);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 0.12s, color 0.12s;
+}
+.ls-strip-btn:hover {
+  border-color: var(--champ-ember);
+  color: var(--champ-snow);
+}
+.ls-cost-btn {
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--champ-mist);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.ls-cost-btn:hover {
+  color: var(--champ-snow);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---- STATUS DRAWER ---- */
+.ls-drawer {
+  position: absolute;
+  top: 46px;
+  right: 10px;
+  width: 264px;
+  background: var(--champ-carbon);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  padding: 16px;
+  color: var(--champ-snow);
+  z-index: 30;
+  animation: ppFadeUp 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.ls-drawer-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--champ-mist);
+  margin-bottom: 10px;
+}
+.ls-drawer-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.ls-drawer-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ls-drawer-key { color: var(--champ-cloud); }
+.ls-drawer-val {
+  font-family: var(--font-mono);
+  color: var(--champ-snow);
+}
+.ls-drawer-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 12px 0;
+}
+.ls-drawer-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--champ-cloud);
+  cursor: pointer;
+}
+.ls-drawer-check input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--champ-ember);
+  cursor: pointer;
+}
+.ls-drawer-note {
+  font-size: 11px;
+  color: var(--champ-mist);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+/* ---- QUESTION CARD ---- */
+.ls-question {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 430px;
+  max-width: calc(100vw - 32px);
+  background: var(--champ-carbon);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  padding: 18px 18px 14px;
+  color: var(--champ-snow);
+  z-index: 25;
+  animation: ppDropIn 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.ls-q-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ls-q-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--champ-ember);
+}
+.ls-q-spacer { flex: 1; }
+.ls-q-countdown {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--champ-mist);
+}
+.ls-q-skip {
+  background: transparent;
+  border: none;
+  color: var(--champ-mist);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.12s, background 0.12s;
+}
+.ls-q-skip:hover {
+  color: var(--champ-snow);
+  background: rgba(255, 255, 255, 0.06);
+}
+.ls-q-text {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16.5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.ls-q-answered {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--champ-verdant);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.ls-q-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.ls-q-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--champ-ink);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--champ-snow);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ls-q-option:hover {
+  border-color: var(--champ-ember);
+  background: var(--champ-slate);
+  transform: translateY(-1px);
+}
+.ls-q-badge {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: var(--champ-mist);
+  border-radius: 6px;
+}
+.ls-q-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ls-q-input {
+  flex: 1;
+  height: 32px;
+  background: var(--champ-ink);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--champ-snow);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.ls-q-input-row.freeform .ls-q-input { height: 40px; }
+.ls-q-input:focus {
+  border-color: var(--champ-ember);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
+}
+.ls-q-send {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  background: var(--champ-ember);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s;
+}
+.ls-q-input-row.freeform .ls-q-send { width: 40px; height: 40px; }
+.ls-q-send:hover { background: var(--champ-ember-glow); }
+.ls-q-progress {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  margin-top: 14px;
+  overflow: hidden;
+}
+.ls-q-progress-fill {
+  height: 3px;
+  background: var(--champ-ember);
+  border-radius: 2px;
+  transition: width 0.25s linear;
+}
+
+/* ---- CAPTION PILL ---- */
+.ls-caption {
+  position: absolute;
+  bottom: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, 70vw);
+  background: rgba(11, 13, 18, 0.86);
+  backdrop-filter: blur(8px);
+  border-radius: 9999px;
+  padding: 7px 16px;
+  color: var(--champ-cloud);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 15;
+  animation: ppFadeUp 0.22s both;
+  pointer-events: none;
+}
+
+/* ---- STEER BAR ---- */
+.ls-steer {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, 70vw);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.ls-steer-applied {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 9999px;
+  padding: 5px 14px;
+  color: var(--champ-verdant);
+  font-size: 12.5px;
+  animation: ppFadeUp 0.22s both;
+}
+.ls-steer-failed {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 9999px;
+  padding: 5px 8px 5px 14px;
+  color: #f87171;
+  font-size: 12.5px;
+  animation: ppFadeUp 0.22s both;
+}
+.ls-steer-retry {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 9999px;
+  padding: 2px 10px;
+  color: #f87171;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ls-steer-retry:hover { background: rgba(239, 68, 68, 0.15); }
+.ls-steer-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 13, 18, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px 8px 6px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.12s;
+}
+.ls-steer-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--champ-snow);
+  font-size: 13px;
+}
+.ls-steer-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--champ-mist);
+  letter-spacing: 0.1em;
+}
+.ls-steer-send {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s;
+}
+.ls-steer-send:hover { background: var(--champ-ember-glow) !important; }
+
+/* ---- floating error pill (live) ---- */
+.ls-error {
+  position: absolute;
+  top: 52px;
+  right: 10px;
+  max-width: 320px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  z-index: 26;
+  animation: ppFadeUp 0.22s both;
+}

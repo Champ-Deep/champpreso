@@ -31,6 +31,7 @@ import {
   nativeElementsToSkeletonForSync,
 } from "./excalidraw-sync.js";
 import { SetupScreen } from "./screens/setup-screen.js";
+import { ListeningScreen } from "./screens/listening-screen.js";
 import {
   REASONING_EFFORTS,
   OPENAI_AGENT_MODELS,
@@ -190,11 +191,23 @@ function App() {
   // v0.2.0 state: queue backlog, paused capture, pending clarifying question.
   const [queueStats, setQueueStats] = React.useState(null);
   const [capturePaused, setCapturePaused] = React.useState(false);
-  // Derived lifecycle phase: "setup" | "listening" | "paused". Paused is
-  // only meaningful once listening has started; capture:paused messages
-  // received before then (there shouldn't be any) are ignored.
-  const phase =
-    lifecycleMode === "listening" && capturePaused ? "paused" : lifecycleMode;
+  // Redesign "halo" live surface. `endedSession` is a client-only flag the End
+  // button sets to flip `phase` to "review" (Task 10 owns the Review screen and
+  // the actual /review call). `nudgeSignal` carries the latest steer result so
+  // the steer bar can show its applied/failed state; the bumped nonce lets the
+  // ListeningScreen re-trigger the banner even on repeat outcomes.
+  const [endedSession, setEndedSession] = React.useState(false);
+  const [nudgeSignal, setNudgeSignal] = React.useState(null);
+  const nudgeNonceRef = React.useRef(0);
+  // Derived lifecycle phase: "setup" | "listening" | "paused" | "review".
+  // Paused is only meaningful once listening has started; capture:paused
+  // messages received before then (there shouldn't be any) are ignored.
+  // "review" is a client-only phase the End button sets via `endedSession`.
+  const phase = endedSession
+    ? "review"
+    : lifecycleMode === "listening" && capturePaused
+      ? "paused"
+      : lifecycleMode;
   const [pendingQuestion, setPendingQuestion] = React.useState(null);
   // v0.3.0 Aegis UI prefs. Local copy of settings.ui so UI feels instant; saves
   // debounced like agentInstructions. Defaults mirror DEFAULT_SETTINGS.ui on
@@ -655,6 +668,26 @@ function App() {
     }
   }
 
+  // End the live session from the halo's End button. Client-side only: stop mic
+  // capture (matching pauseSession's audio teardown) and flip `phase` to
+  // "review". The Review screen (Task 10) owns the actual POST /review so it can
+  // show a loading state while the summary generates.
+  async function endToReview() {
+    if (listening) await stopListening();
+    setEndedSession(true);
+  }
+
+  // Auto-start mic capture when the session goes live (phase "listening"). The
+  // redesign has no manual "Start talking" button — the halo is live the moment
+  // Setup hands off. Resuming from "paused" doesn't re-fire (listening is still
+  // true because pause is server-side capture pause, not a client mic stop).
+  React.useEffect(() => {
+    if (phase === "listening" && !listening && !starting && !endedSession) {
+      startListening();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   async function answerPendingQuestion(text) {
     if (!pendingQuestion) return;
     const trimmed = String(text ?? "").trim();
@@ -836,6 +869,7 @@ function App() {
           );
           if (message.mode === "staging") {
             setTranscriptHistory([]);
+            setEndedSession(false);
             if (previousMode === "live") {
               // Returning from live: restore the staged canvas the user was last working on.
               applyScene(stagingSceneRef.current, { recenter: true });
@@ -930,7 +964,20 @@ function App() {
           if (message.id === null && Array.isArray(message.all) && message.all.length === 0) showToast("All pins cleared", { variant: "info" });
         }
         if (message.type === "nudge:applied") {
-          showToast(`Nudge sent: "${(message.text || "").slice(0, 40)}${(message.text || "").length > 40 ? "..." : ""}"`, { variant: "success" });
+          nudgeNonceRef.current += 1;
+          setNudgeSignal({
+            status: "applied",
+            text: message.text || "",
+            nonce: nudgeNonceRef.current,
+          });
+        }
+        if (message.type === "nudge:failed") {
+          nudgeNonceRef.current += 1;
+          setNudgeSignal({
+            status: "failed",
+            reason: message.reason || "",
+            nonce: nudgeNonceRef.current,
+          });
         }
         if (message.type === "stt:dropped") {
           // Quiet, but log to console so dev can see what got filtered
@@ -1076,6 +1123,7 @@ function App() {
       return;
     }
     setError("");
+    setEndedSession(false);
     setPresoStarting(true);
     try {
       await flushAgentInstructionsSave();
@@ -1281,38 +1329,42 @@ function App() {
             starting: presoStarting,
           })
         : null,
-      // Canvas palette swatch row (PRESO only, if enabled).
-      isLive && uiPrefs.paletteRow
-        ? React.createElement(PaletteRow, {
-            active: uiPrefs.activePalette,
-            onChange: (v) => patchUiPref("activePalette", v),
-            shift: uiPrefs.onboarding,
-            key: "pr",
+      // Listening / Paused halo (redesign). Overlays the full-bleed canvas with
+      // the top status strip, status drawer, question card, caption pill and
+      // steer bar. Replaces the old live-mode side panel + canvas floaters.
+      phase === "listening" || phase === "paused"
+        ? React.createElement(ListeningScreen, {
+            key: "listening-screen",
+            paused: phase === "paused",
+            listening,
+            agentStatus,
+            agentThinking,
+            activeZone,
+            cost,
+            agentLabel: settings ? agentModelLabel(settings) : "Agent",
+            transcriptionProvider: settings?.transcription?.provider ?? "moonshine",
+            turnCount: transcriptHistory.filter((t) => t.status === "completed").length,
+            captionText,
+            captionsOn: uiPrefs.captionsOn,
+            onToggleCaptions: (v) => patchUiPref("captionsOn", v),
+            question: pendingQuestion,
+            onAnswerQuestion: answerPendingQuestion,
+            onSkipQuestion: dismissPendingQuestion,
+            onPauseResume: handlePauseToggle,
+            onUndo: handleUndoTurn,
+            onEnd: endToReview,
+            nudgeSignal,
+            error,
           })
         : null,
-      // Caption mode FAB (PRESO only).
-      isLive
-        ? React.createElement(CaptionFab, {
-            mode: uiPrefs.captionMode,
-            onChange: (v) => patchUiPref("captionMode", v),
-            shift: uiPrefs.onboarding,
-            key: "cf",
-          })
-        : null,
-      // v0.7.0: Floating zone-of-the-moment chip (PRESO only).
-      isLive
-        ? React.createElement(ZoneChip, {
-            zone: activeZone,
-            key: "zone",
-          })
-        : null,
-      // v0.12.0: Agent thinking status text (floats near zone chip)
-      isLive && agentThinking
+      // Review is a client-only phase (End pressed). Task 10 builds the real
+      // Review screen; until then show a minimal placeholder so the canvas stays
+      // visible and editable.
+      phase === "review"
         ? React.createElement(
             "div",
-            { className: "agent-thinking", key: "agent-thinking" },
-            React.createElement("span", { className: "at-dot" }),
-            React.createElement("span", null, agentThinking, "…"),
+            { className: "review-placeholder", key: "review-placeholder" },
+            "Session ended. Review screen coming soon.",
           )
         : null,
       // v0.12.0: Toast stack. Bottom-right of the canvas.
@@ -1333,24 +1385,6 @@ function App() {
             ),
           )
         : null,
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "panel-toggle",
-          onClick: () => setPanelHidden((v) => !v),
-          title: panelHidden ? "Show settings panel" : "Hide settings panel",
-          "aria-label": panelHidden
-            ? "Show settings panel"
-            : "Hide settings panel",
-          "aria-expanded": !panelHidden,
-        },
-        React.createElement(
-          "span",
-          { className: "panel-toggle-icon", "aria-hidden": "true" },
-          panelHidden ? "‹" : "›",
-        ),
-      ),
       React.createElement(Excalidraw, {
         excalidrawAPI: setApi,
         // v0.13.0: sync Excalidraw's appearance with the Aegis panel theme.
@@ -1407,484 +1441,7 @@ function App() {
             ),
           )
         : null,
-      isLive && pendingQuestion
-        ? React.createElement(QuestionCard, {
-            question: pendingQuestion,
-            onAnswer: answerPendingQuestion,
-            onDismiss: dismissPendingQuestion,
-            position: uiPrefs.questionPos,
-            key: pendingQuestion.id,
-          })
-        : null,
-      // Working-mode caption pill: small, top-right (when captions on + working).
-      isLive && uiPrefs.captionsOn && uiPrefs.captionMode === "working" && captionText
-        ? React.createElement(
-            "div",
-            { className: "caption-work", role: "status", "aria-live": "polite" },
-            React.createElement("span", { className: "live-dot" }),
-            React.createElement("span", { className: "ct" }, truncateCaption(captionText)),
-          )
-        : null,
-      // Presentation-mode caption pill (default bottom-center, big).
-      uiPrefs.captionsOn && uiPrefs.captionMode === "presentation"
-        ? React.createElement(
-            "div",
-            {
-              className: `stage-overlay ${(captionText || listening) && isLive ? "visible" : ""}`,
-              "aria-hidden": "true",
-            },
-            captionText
-              ? React.createElement(
-                  "div",
-                  {
-                    className: "caption-pill",
-                    role: "status",
-                    "aria-live": "polite",
-                  },
-                  truncateCaption(captionText),
-                )
-              : null,
-            React.createElement(Waveform, { analyser, active: listening }),
-          )
-        : null,
     ),
-    // The legacy side panel is superseded by SetupScreen in the setup phase.
-    // It still owns the live/paused surface (redesigned by later tasks).
-    phase !== "setup"
-      ? React.createElement(
-      "aside",
-      { className: "panel" },
-      React.createElement(
-        "div",
-        { className: "brand" },
-        React.createElement(
-          "div",
-          { className: "brand-row" },
-          React.createElement(
-            "h1",
-            null,
-            "Champ",
-            React.createElement("span", { className: "preso" }, "Preso"),
-          ),
-        ),
-        React.createElement(
-          "p",
-          null,
-          "Just talk through your ideas. Let the agent whiteboard for you.",
-        ),
-      ),
-      React.createElement(
-        "div",
-        { className: "controls" },
-        isLive
-          ? React.createElement(
-              "div",
-              { className: "listen-controls" },
-              React.createElement(
-                "div",
-                { className: "listen-row" },
-                React.createElement(
-                  "button",
-                  {
-                    className: `record-toggle ${listening ? "recording" : ""}`,
-                    onClick: toggleListening,
-                    disabled:
-                      starting ||
-                      (warmupState.state === "running" && !listening),
-                    title:
-                      warmupState.state === "running"
-                        ? "Waiting for prompt cache to warm up"
-                        : warmupState.state === "exhausted"
-                          ? "Cache didn't fully prime; first turn may be slower"
-                          : undefined,
-                  },
-                  React.createElement(
-                    "span",
-                    { className: "record-icon" },
-                    listening ? "■" : "●",
-                  ),
-                  " ",
-                  listening
-                    ? "Stop"
-                    : starting
-                      ? "Starting..."
-                      : warmupState.state === "running"
-                        ? `Warming up... (${warmupState.attempt} / ${warmupState.maxAttempts})`
-                        : "Start Talking",
-                ),
-                React.createElement(
-                  "button",
-                  {
-                    className: "fullscreen-toggle",
-                    onClick: toggleFullscreen,
-                    title: isFullscreen
-                      ? "Exit fullscreen (Esc)"
-                      : "Fullscreen for screen sharing",
-                    "aria-label": isFullscreen
-                      ? "Exit fullscreen"
-                      : "Enter fullscreen",
-                  },
-                  fullscreenIcon(isFullscreen),
-                ),
-              ),
-              warmupState.state === "running" && !listening
-                ? React.createElement(
-                    "button",
-                    {
-                      className: "warmup-skip",
-                      onClick: startAnyway,
-                      title:
-                        "Skip warmup and start listening now. The first turn may be slower.",
-                    },
-                    "Start Anyway →",
-                  )
-                : null,
-              warmupState.state === "exhausted" && !listening
-                ? React.createElement(
-                    "div",
-                    { className: "warmup-warning" },
-                    "Cache didn't fully prime. First turn may be slower.",
-                  )
-                : null,
-            )
-          : null,
-        React.createElement(
-          "button",
-          {
-            className: `reset-session ${resetConfirming ? "confirming" : ""}`,
-            onClick: handleResetClick,
-            disabled: resetting,
-            title:
-              mode === "staging"
-                ? "Clear the staging area"
-                : "Clear the whiteboard and start a new session",
-          },
-          resetting
-            ? "Resetting..."
-            : resetConfirming
-              ? "Click again to reset"
-              : mode === "staging"
-                ? "Reset Staging"
-                : "Reset Session",
-        ),
-      ),
-      mode === "live"
-        ? (function () {
-            const backlog = queueStats && (queueStats.pending + queueStats.buffered > 0 || queueStats.running)
-              ? React.createElement(BacklogPill, { stats: queueStats, key: "backlog" })
-              : queueStats
-                ? React.createElement(
-                    "div",
-                    { className: "backlog-pill caught-up", key: "backlog" },
-                    React.createElement("span", { className: "backlog-dot" }),
-                    React.createElement("span", null, "Caught up"),
-                  )
-                : null;
-            const pause = React.createElement(
-              "button",
-              {
-                key: "pause",
-                className: `pause-capture ${capturePaused ? "paused" : ""}`,
-                onClick: handlePauseToggle,
-                title: capturePaused
-                  ? "Resume capturing your speech to the agent"
-                  : "Stop sending your speech to the agent without ending the session",
-              },
-              capturePaused ? "▶ Resume capture" : "❚❚ Pause capture",
-            );
-            const children = uiPrefs.backlogPosition === "above"
-              ? [backlog, pause]
-              : [pause, backlog];
-            return React.createElement(
-              "div",
-              { className: "live-controls", key: "live-controls" },
-              ...children.filter(Boolean),
-            );
-          })()
-        : null,
-      mode === "live"
-        ? React.createElement(
-            "div",
-            { className: "live-action-row", key: "live-action-row" },
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "interrupt-btn",
-                onClick: handleInterrupt,
-                title: "Interrupt the agent (Cmd+I)",
-                "aria-label": "Interrupt",
-              },
-              React.createElement("span", { className: "btn-icon" }, "⊘"),
-              React.createElement("span", { className: "btn-label" }, "Interrupt"),
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "undo-btn",
-                onClick: handleUndoTurn,
-                title: "Undo last agent turn (Cmd+Z)",
-                "aria-label": "Undo turn",
-              },
-              React.createElement("span", { className: "btn-icon" }, "↶"),
-              React.createElement("span", { className: "btn-label" }, "Undo"),
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "pin-btn",
-                onClick: pinSelection,
-                title: "Pin selection (Cmd+Shift+P) — agent won't touch pinned shapes",
-                "aria-label": "Pin selection",
-              },
-              React.createElement("span", { className: "btn-icon" }, "📌"),
-              React.createElement("span", { className: "btn-label" }, "Pin"),
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "pin-btn",
-                onClick: clearAllPins,
-                title: "Clear all pins",
-                "aria-label": "Clear all pins",
-              },
-              React.createElement("span", { className: "btn-icon" }, "✕"),
-              React.createElement("span", { className: "btn-label" }, "Unpin all"),
-            ),
-          )
-        : null,
-      mode === "live"
-        ? React.createElement(ExportMenu, {
-            onExport: exportCanvas,
-            key: "export-menu",
-          })
-        : null,
-      mode === "live"
-        ? React.createElement(QuickActions, { key: "quick-actions" })
-        : null,
-      mode === "live"
-        ? React.createElement(NudgeBar, { key: "nudge-bar" })
-        : null,
-      // Status card. In PRESO with statusDensity="collapse" it renders as
-      // a one-line button that expands on click. Otherwise full three rows.
-      mode === "live" && uiPrefs.statusDensity === "collapse" && !statusMiniOpen
-        ? React.createElement(
-            "button",
-            {
-              type: "button",
-              className: "status-mini",
-              onClick: () => setStatusMiniOpen(true),
-              title: "Expand status",
-            },
-            React.createElement("span", { className: "mini-dot" }),
-            React.createElement("span", { className: "mini-lbl" }, "Agent"),
-            React.createElement(
-              "span",
-              { className: "mini-model" },
-              (settings?.agent && agentModelLabel(settings)) || "agent",
-            ),
-            React.createElement("span", { className: "mini-chev" }, "▾"),
-          )
-        : React.createElement(
-        "div",
-        { className: "status-card" },
-        statusRow({
-          dotState: micState,
-          label: "Mic",
-          value: micLabel,
-          expanded: expandedRow === "mic",
-          onToggle: () => setExpandedRow(expandedRow === "mic" ? null : "mic"),
-          editor: React.createElement(MicEditor, {
-            currentDeviceId: mic.deviceId,
-            onSave: (next) => {
-              setMic(next);
-              saveStoredMic(next);
-              setExpandedRow(null);
-            },
-            onCancel: () => setExpandedRow(null),
-          }),
-        }),
-        statusRow({
-          dotState: sttState,
-          label: "Voice",
-          value: sttLabel,
-          expanded: expandedRow === "stt",
-          onToggle: () => setExpandedRow(expandedRow === "stt" ? null : "stt"),
-          editor: settings
-            ? React.createElement(TranscriptionEditor, {
-                settings,
-                onSave: async (patch) => {
-                  await saveSettings(patch);
-                  setExpandedRow(null);
-                },
-                onCancel: () => setExpandedRow(null),
-              })
-            : null,
-        }),
-        statusRow({
-          dotState: agentState,
-          label: "Agent",
-          value: agentLabel,
-          expanded: expandedRow === "agent",
-          onToggle: () =>
-            setExpandedRow(expandedRow === "agent" ? null : "agent"),
-          editor: settings
-            ? React.createElement(AgentEditor, {
-                settings,
-                onSave: async (patch) => {
-                  await saveSettings(patch);
-                  setExpandedRow(null);
-                },
-                onCancel: () => setExpandedRow(null),
-              })
-            : null,
-        }),
-      ),
-      isLive && cost ? React.createElement(CostCard, { cost }) : null,
-      isLive
-        ? React.createElement(
-            "div",
-            { className: "transcript-history-card", key: "transcript-history" },
-            React.createElement(
-              "div",
-              { className: "th-header" },
-              React.createElement("span", { className: "th-title" }, "Live Transcript History"),
-              transcriptHistory.length > 0
-                ? React.createElement(
-                    "button",
-                    {
-                      type: "button",
-                      className: "th-clear",
-                      onClick: () => setTranscriptHistory([]),
-                      title: "Clear history list",
-                    },
-                    "Clear"
-                  )
-                : null
-            ),
-            React.createElement(
-              "form",
-              {
-                className: "th-say",
-                onSubmit: (e) => {
-                  e.preventDefault();
-                  sendTypedTurn(sayText);
-                },
-              },
-              React.createElement("input", {
-                className: "th-say-input",
-                type: "text",
-                value: sayText,
-                placeholder: "Type a point to add to the board…",
-                disabled: saySending,
-                "aria-label": "Type a point to add to the board",
-                onChange: (e) => setSayText(e.target.value),
-              }),
-              React.createElement(
-                "button",
-                {
-                  type: "submit",
-                  className: "th-say-send",
-                  disabled: saySending || !sayText.trim(),
-                  title: "Add this to the board",
-                },
-                saySending ? "…" : "Add"
-              )
-            ),
-            React.createElement(
-              "div",
-              { className: "th-list" },
-              transcriptHistory.length === 0
-                ? React.createElement(
-                    "div",
-                    { className: "th-empty" },
-                    "No spoken turns processed yet. Start talking to see history."
-                  )
-                : React.createElement(
-                    "ul",
-                    null,
-                    ...transcriptHistory.map((item) => {
-                      let statusIcon = "⚪";
-                      let statusClass = "queued";
-                      if (item.status === "processing") {
-                        statusIcon = "⏳";
-                        statusClass = "processing";
-                      } else if (item.status === "completed") {
-                        statusIcon = "✅";
-                        statusClass = "completed";
-                      } else if (item.status === "failed") {
-                        statusIcon = "❌";
-                        statusClass = "failed";
-                      }
-                      return React.createElement(
-                        "li",
-                        { key: item.id, className: `th-item ${statusClass}` },
-                        React.createElement(
-                          "div",
-                          { className: "th-item-header" },
-                          React.createElement(
-                            "span",
-                            { className: "th-status-badge", title: item.status },
-                            statusIcon
-                          ),
-                          React.createElement(
-                            "span",
-                            { className: "th-time" },
-                            new Date(item.timestamp).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })
-                          ),
-                          item.durationMs != null
-                            ? React.createElement(
-                                "span",
-                                { className: "th-duration", title: "Time from speech to edit" },
-                                formatDuration(item.durationMs)
-                              )
-                            : null
-                        ),
-                        React.createElement("div", { className: "th-text" }, item.text),
-                        item.error
-                          ? React.createElement(
-                              "div",
-                              { className: "th-error-msg" },
-                              item.error
-                            )
-                          : null
-                      );
-                    }),
-                    React.createElement("div", { ref: transcriptHistoryEndRef })
-                  )
-            )
-          )
-        : null,
-      error ? React.createElement("div", { className: "error" }, error) : null,
-      // UI Settings drawer trigger (always visible, bottom of panel above footer).
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "ui-settings-trigger",
-          onClick: () => setUiDrawerOpen((v) => !v),
-          title: "Adjust panel appearance and behavior",
-        },
-        React.createElement("span", null, uiDrawerOpen ? "▾" : "⚙"),
-        React.createElement("span", null, "UI Settings"),
-      ),
-      uiDrawerOpen
-        ? React.createElement(UISettingsPanel, {
-            prefs: uiPrefs,
-            onChange: patchUiPref,
-            onClose: () => setUiDrawerOpen(false),
-            key: "ui-settings",
-          })
-        : null,
-    )
-      : null,
   );
 }
 
