@@ -26,6 +26,10 @@ import {
 } from "./api-client.js";
 import { createWsClient } from "./ws-client.js";
 import { startMicCapture } from "./mic-capture.js";
+import {
+  createExcalidrawSync,
+  nativeElementsToSkeletonForSync,
+} from "./excalidraw-sync.js";
 
 // v0.5.0: Mermaid integration. Loaded lazily on first render_mermaid call so
 // the ~200KB Mermaid bundle doesn't slow first paint. The import promise is
@@ -744,31 +748,27 @@ function App() {
     } catch {}
   }
 
-  function handleExcalidrawChange(elements, appState) {
-    // v0.15.0: track the current selection (cheap; only re-render on count
-    // change) so the "Edit selected" scoped-edit bar can appear in live mode.
-    const sel = appState?.selectedElementIds || {};
-    const ids = Object.keys(sel).filter((id) => sel[id]);
-    if (ids.length !== selectedIdsRef.current.length || ids.some((id, i) => id !== selectedIdsRef.current[i])) {
-      selectedIdsRef.current = ids;
-      setSelectedCount(ids.length);
-    }
-    // Only push user edits to the server while in live mode. In staging the
-    // canvas is a client-side scratchpad; the server doesn't need to know.
-    if (modeRef.current !== "live") return;
-    // Allow user edits while listening, EXCEPT when the agent is actively thinking/processing a turn.
-    if (agentStatusRef.current === "thinking") return;
-    clearTimeout(userElementsSyncTimerRef.current);
-    userElementsSyncTimerRef.current = setTimeout(() => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const cleaned = nativeElementsToSkeletonForSync(elements ?? []);
-      const hash = JSON.stringify(cleaned);
-      if (hash === lastSyncedElementsHashRef.current) return;
-      lastSyncedElementsHashRef.current = hash;
-      ws.send({ type: "whiteboard:user-elements", elements: cleaned });
-    }, 500);
-  }
+  // Mode/status-aware canvas <-> server sync contract, extracted into
+  // public/excalidraw-sync.js. Recreated each render (cheap - just closures
+  // over stable refs/setters), matching the previous per-render function
+  // declarations. See that module for the guard rationale.
+  const {
+    applyScene,
+    handleExcalidrawChange,
+    applyWhiteboardViewportCommand,
+  } = createExcalidrawSync({
+    getExcalidrawApi: () => apiRef.current,
+    getMode: () => modeRef.current,
+    getAgentStatus: () => agentStatusRef.current,
+    getWs: () => wsRef.current,
+    selectedIdsRef,
+    setSelectedCount,
+    userElementsSyncTimerRef,
+    lastSyncedElementsHashRef,
+    scheduleScreenshot: () => scheduleWhiteboardScreenshot(),
+    getZoom: () => currentWhiteboardZoom(),
+    setZoom: (zoom) => setWhiteboardZoom(zoom),
+  });
 
   // Persistent WebSocket connection for the lifetime of the app.
   React.useEffect(() => {
@@ -1193,67 +1193,6 @@ function App() {
     } finally {
       setResetting(false);
     }
-  }
-
-  function applyScene(elements, { recenter = false } = {}) {
-    const excalidrawAPI = apiRef.current;
-    if (!excalidrawAPI || !Array.isArray(elements)) return;
-    const looksNative =
-      elements.length > 0 &&
-      elements[0] &&
-      typeof elements[0].versionNonce === "number";
-    // CRITICAL: regenerateIds: false. Excalidraw's default is to throw away
-    // user-provided ids and assign fresh nanoids. The agent references its
-    // elements by stable ids (e.g. "openai-card") in whiteboard_viewport's
-    // focus_ids; if we let Excalidraw rewrite them, the frontend's
-    // scene.filter(el => focusIds.includes(el.id)) finds nothing and
-    // scrollToContent silently fits the full canvas instead.
-    const renderable = looksNative
-      ? elements
-      : convertToExcalidrawElements(elements, { regenerateIds: false });
-    excalidrawAPI.updateScene({
-      elements: renderable,
-      appState: { viewBackgroundColor: "#fffdf8" },
-    });
-    if (recenter && renderable.length > 0) {
-      // Defer so updateScene's commit is flushed before scrollToContent measures bounds.
-      requestAnimationFrame(() =>
-        excalidrawAPI.scrollToContent(undefined, { animate: false }),
-      );
-    }
-    scheduleWhiteboardScreenshot();
-  }
-
-  function applyWhiteboardViewportCommand(command) {
-    const excalidrawAPI = apiRef.current;
-    if (!excalidrawAPI) return;
-
-    const action = command.action;
-    if (action === "scroll_to_content") {
-      const focusIds = Array.isArray(command.focus_ids)
-        ? command.focus_ids
-        : null;
-      let target;
-      if (focusIds && focusIds.length > 0) {
-        const scene = excalidrawAPI.getSceneElements();
-        const matched = scene.filter((el) => focusIds.includes(el.id));
-        if (matched.length > 0) target = matched;
-      }
-      excalidrawAPI.scrollToContent(target, { animate: true });
-    }
-    if (action === "set_zoom") {
-      setWhiteboardZoom(command.zoom);
-    }
-    if (action === "zoom_in") {
-      setWhiteboardZoom(currentWhiteboardZoom() * 1.2);
-    }
-    if (action === "zoom_out") {
-      setWhiteboardZoom(currentWhiteboardZoom() / 1.2);
-    }
-    if (action === "reset_zoom") {
-      setWhiteboardZoom(1);
-    }
-    scheduleWhiteboardScreenshot();
   }
 
   function currentWhiteboardZoom() {
@@ -3011,75 +2950,10 @@ function select(value, onChange, options, disabled) {
   );
 }
 
-// Convert Excalidraw native elements back into the simple "skeleton" shape the
-// server stores. Critical: when the agent emits {rectangle, label: "X"},
-// convertToExcalidrawElements expands that into a rectangle PLUS a separate
-// bound text element. If we echo both back to the server verbatim, the server's
-// state.elements doubles up - on the next agent turn the rectangle has lost its
-// label, the agent re-adds it, Excalidraw creates ANOTHER bound text, and now
-// the canvas renders the same label twice. Folding bound text back into the
-// shape's label field on the way out keeps state.elements in the canonical form
-// the agent expects.
-function nativeElementsToSkeletonForSync(nativeElements) {
-  const elements = nativeElements.filter((el) => el && !el.isDeleted);
-  const byId = new Map(elements.map((el) => [el.id, el]));
-  const consumedTextIds = new Set();
-  const result = [];
-
-  for (const el of elements) {
-    // Bound text whose parent shape is in the scene: skip - it'll be folded
-    // into the parent's label below.
-    if (el.type === "text" && el.containerId && byId.has(el.containerId)) {
-      consumedTextIds.add(el.id);
-      continue;
-    }
-
-    const boundElements = Array.isArray(el.boundElements)
-      ? el.boundElements
-      : null;
-    const textBinding =
-      boundElements && boundElements.find((b) => b?.type === "text");
-    const labelText = textBinding && byId.get(textBinding.id);
-
-    if (labelText) {
-      consumedTextIds.add(labelText.id);
-      result.push({
-        ...stripInternalFields(el),
-        label: {
-          text: labelText.text ?? "",
-          fontSize: labelText.fontSize ?? 18,
-        },
-      });
-      continue;
-    }
-
-    result.push(stripInternalFields(el));
-  }
-
-  return result.filter((el) => !consumedTextIds.has(el.id));
-}
-
-function stripInternalFields(el) {
-  // Drop Excalidraw fields that change on every render (cache thrash) or that
-  // we don't want the agent reasoning about (locking, grouping, etc.).
-  const {
-    versionNonce,
-    version,
-    updated,
-    seed,
-    index,
-    link,
-    locked,
-    customData,
-    frameId,
-    groupIds,
-    boundElements,
-    containerId,
-    isDeleted,
-    ...rest
-  } = el;
-  return rest;
-}
+// nativeElementsToSkeletonForSync / stripInternalFields now live in
+// public/excalidraw-sync.js (imported above); kept out of this file to keep
+// the mode/status-aware sync contract colocated with applyScene /
+// handleExcalidrawChange / applyWhiteboardViewportCommand.
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {

@@ -44,8 +44,9 @@ test("frontend skips staging screenshot image when staging is empty", () => {
 
 test("frontend pushes user-drawn live elements to the server", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  const syncSource = readFileSync(path.join(rootDir, "public", "excalidraw-sync.js"), "utf8");
 
-  assert.match(appSource, /type: "whiteboard:user-elements"/);
+  assert.match(syncSource, /type: "whiteboard:user-elements"/);
   assert.match(appSource, /handleExcalidrawChange/);
 });
 
@@ -58,11 +59,12 @@ test("frontend flushes pending agent instructions before starting preso", () => 
 
 test("frontend handles viewport commands from the agent", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  const syncSource = readFileSync(path.join(rootDir, "public", "excalidraw-sync.js"), "utf8");
 
   assert.match(appSource, /message\.type === "whiteboard:viewport"/);
   assert.match(appSource, /applyWhiteboardViewportCommand/);
-  assert.match(appSource, /action === "scroll_to_content"/);
-  assert.match(appSource, /action === "set_zoom"/);
+  assert.match(syncSource, /action === "scroll_to_content"/);
+  assert.match(syncSource, /action === "set_zoom"/);
 });
 
 test("frontend exposes OpenAI agent base URL and labels the key as API key", () => {
