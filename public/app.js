@@ -55,7 +55,6 @@ async function getMermaidToExcalidraw() {
 // Mirrors the server-side turnHistory cap in whiteboard-session.js.
 const TRANSCRIPT_HISTORY_LIMIT = 50;
 const MIC_STORAGE_KEY = "champpreso.mic";
-const PANEL_HIDDEN_STORAGE_KEY = "champpreso.panelHidden";
 
 const STARTER_STAGING_ELEMENTS = [];
 
@@ -91,14 +90,6 @@ function loadStoredMic() {
 
 function saveStoredMic(mic) {
   localStorage.setItem(MIC_STORAGE_KEY, JSON.stringify(mic));
-}
-
-function loadStoredPanelHidden() {
-  try {
-    return localStorage.getItem(PANEL_HIDDEN_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
 }
 
 function useExcalidrawThemeSync(apiRef, panelTheme) {
@@ -166,7 +157,6 @@ function App() {
   const [sttError, setSttError] = React.useState(false);
   const [expandedRow, setExpandedRow] = React.useState(null);
   const [mic, setMic] = React.useState(loadStoredMic);
-  const [panelHidden, setPanelHidden] = React.useState(loadStoredPanelHidden);
   const [analyser, setAnalyser] = React.useState(null);
   const [resetConfirming, setResetConfirming] = React.useState(false);
   const [resetting, setResetting] = React.useState(false);
@@ -286,11 +276,6 @@ function App() {
     listeningRef.current = listening;
   }, [listening]);
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(PANEL_HIDDEN_STORAGE_KEY, panelHidden ? "1" : "0");
-    } catch {}
-  }, [panelHidden]);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   React.useEffect(() => {
@@ -1322,7 +1307,7 @@ function App() {
   return React.createElement(
     "main",
     {
-      className: `shell mode-${mode}${panelHidden ? " panel-hidden" : ""}`,
+      className: `shell mode-${mode}`,
       "data-panel-theme": uiPrefs.panelTheme || "dark",
       style: worldStyle,
       ref: shellRef,
