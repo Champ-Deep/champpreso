@@ -32,6 +32,7 @@ import {
 } from "./excalidraw-sync.js";
 import { SetupScreen } from "./screens/setup-screen.js";
 import { ListeningScreen } from "./screens/listening-screen.js";
+import { ReviewScreen } from "./screens/review-screen.js";
 import {
   REASONING_EFFORTS,
   OPENAI_AGENT_MODELS,
@@ -199,6 +200,9 @@ function App() {
   const [endedSession, setEndedSession] = React.useState(false);
   const [nudgeSignal, setNudgeSignal] = React.useState(null);
   const nudgeNonceRef = React.useRef(0);
+  // Wall-clock timestamp of when the preso last went live. Used by the Review
+  // screen to show a real session duration in its meta line.
+  const sessionStartedAtRef = React.useRef(null);
   // Derived lifecycle phase: "setup" | "listening" | "paused" | "review".
   // Paused is only meaningful once listening has started; capture:paused
   // messages received before then (there shouldn't be any) are ignored.
@@ -677,6 +681,22 @@ function App() {
     setEndedSession(true);
   }
 
+  // "New session" from the Review screen. Review is client-side-only and the
+  // server's state.mode is still "live". We use back-to-staging (not reset)
+  // here on purpose: only back-to-staging broadcasts a "mode" WS message
+  // (mode: "staging"), which the mode handler above turns into
+  // setEndedSession(false) + lifecycleMode "setup" + a cleared transcript,
+  // returning the user to a clean Setup screen. POST /api/session/reset clears
+  // the board mid-session but stays in live mode, so it would leave the UI
+  // stuck in Review. Session cost is reset by the next Start Preso.
+  async function newSessionFromReview() {
+    try {
+      await apiBackToSetup();
+    } catch (e) {
+      setError(e.message || "Couldn't start a new session.");
+    }
+  }
+
   // Auto-start mic capture when the session goes live (phase "listening"). The
   // redesign has no manual "Start talking" button — the halo is live the moment
   // Setup hands off. Resuming from "paused" doesn't re-fire (listening is still
@@ -1124,6 +1144,7 @@ function App() {
     }
     setError("");
     setEndedSession(false);
+    sessionStartedAtRef.current = Date.now();
     setPresoStarting(true);
     try {
       await flushAgentInstructionsSave();
@@ -1359,15 +1380,19 @@ function App() {
             error,
           })
         : null,
-      // Review is a client-only phase (End pressed). Task 10 builds the real
-      // Review screen; until then show a minimal placeholder so the canvas stays
-      // visible and editable.
+      // Review is a client-only phase (End pressed). The canvas stays visible
+      // and editable — the server's state.mode is still "live", so manual edits
+      // keep syncing. The ReviewScreen calls POST /api/session/review on mount.
       phase === "review"
-        ? React.createElement(
-            "div",
-            { className: "review-placeholder", key: "review-placeholder" },
-            "Session ended. Review screen coming soon.",
-          )
+        ? React.createElement(ReviewScreen, {
+            key: "review-screen",
+            excalidrawApi: api,
+            cost,
+            turnCount: transcriptHistory.filter((t) => t.status === "completed").length,
+            sessionStartedAt: sessionStartedAtRef.current,
+            onExport: exportCanvas,
+            onNewSession: newSessionFromReview,
+          })
         : null,
       // v0.12.0: Toast stack. Bottom-right of the canvas.
       toasts.length > 0

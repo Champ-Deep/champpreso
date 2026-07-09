@@ -3827,3 +3827,230 @@ button:disabled {
   z-index: 26;
   animation: ppFadeUp 0.22s both;
 }
+
+/* ============================================================
+   REVIEW SCREEN (redesign "REVIEW PANEL")
+   ============================================================ */
+
+/* "Reviewing. Canvas is still editable." floating pill (top-left). */
+.rv-pill {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 13, 18, 0.9);
+  backdrop-filter: blur(6px);
+  border-radius: 9999px;
+  padding: 6px 14px;
+  color: var(--champ-cloud);
+  font-size: 12.5px;
+  z-index: 15;
+  animation: ppFadeUp 0.22s both;
+}
+.rv-pill svg {
+  flex: none;
+}
+
+/* Right-pinned session-review panel. */
+.rv-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 324px;
+  background: var(--champ-ink);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 22px;
+  color: var(--champ-snow);
+  overflow-y: auto;
+  z-index: 16;
+  animation: ppFadeUp 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.rv-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--champ-mist);
+}
+.rv-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  margin-top: 6px;
+  letter-spacing: -0.01em;
+}
+.rv-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--champ-mist);
+  margin-top: 4px;
+}
+
+.rv-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--champ-mist);
+  margin-bottom: 10px;
+}
+.rv-section-label.rv-decided {
+  color: var(--champ-ember);
+}
+
+.rv-decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.rv-decision {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--champ-cloud);
+}
+.rv-decision svg {
+  flex: none;
+  margin-top: 2px;
+}
+.rv-empty {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--champ-mist);
+}
+
+.rv-summary {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--champ-cloud);
+}
+
+/* Loading state. */
+.rv-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--champ-mist);
+  font-size: 13px;
+}
+.rv-spinner {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-top-color: var(--champ-ember);
+  animation: rvSpin 0.7s linear infinite;
+}
+@keyframes rvSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error state. */
+.rv-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 10px;
+  padding: 14px;
+}
+.rv-error-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #f87171;
+}
+.rv-error-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--champ-cloud);
+  word-break: break-word;
+}
+.rv-error-retry {
+  align-self: flex-start;
+  margin-top: 2px;
+  height: 28px;
+  padding: 0 14px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  color: var(--champ-snow);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.rv-error-retry:hover {
+  border-color: var(--champ-ember);
+  color: var(--champ-snow);
+}
+
+/* Export / copy action row. */
+.rv-actions {
+  display: flex;
+  gap: 8px;
+}
+.rv-action {
+  flex: 1;
+  height: 32px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: var(--champ-cloud);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.rv-action:hover:not(:disabled) {
+  border-color: var(--champ-ember);
+  color: var(--champ-snow);
+}
+.rv-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Disabled snapshots placeholder (intentional per design). */
+.rv-snapshots {
+  height: 32px;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--champ-mist);
+  font-size: 12px;
+  cursor: default;
+}
+
+.rv-spacer {
+  flex: 1;
+}
+
+/* New session (primary). */
+.rv-new {
+  height: 44px;
+  background: var(--champ-ember);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14.5px;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255, 107, 53, 0.3);
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rv-new:hover {
+  background: var(--champ-ember-glow);
+  transform: translateY(-1px);
+  box-shadow: 0 0 32px rgba(255, 107, 53, 0.5);
+}
