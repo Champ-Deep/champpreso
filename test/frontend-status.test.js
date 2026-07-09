@@ -8,7 +8,7 @@ const rootDir = path.join(import.meta.dirname, "..");
 test("frontend clears stale agent thinking status when the socket is closed", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
 
-  assert.match(appSource, /ws\.addEventListener\("close",[\s\S]*setAgentStatus\("idle"\)/);
+  assert.match(appSource, /onClose:\s*\(\)\s*=>\s*\{[\s\S]*setAgentStatus\("idle"\)/);
   assert.match(appSource, /async function stopListening\(\)[\s\S]*setAgentStatus\("idle"\)/);
 });
 

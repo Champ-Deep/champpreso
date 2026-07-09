@@ -24,6 +24,7 @@ import {
   sendTypedTurn as apiSendTypedTurn,
   resetSession as apiResetSession,
 } from "./api-client.js";
+import { createWsClient } from "./ws-client.js";
 
 // v0.5.0: Mermaid integration. Loaded lazily on first render_mermaid call so
 // the ~200KB Mermaid bundle doesn't slow first paint. The import promise is
@@ -169,6 +170,12 @@ function App() {
   const [api, setApi] = React.useState(null);
   const [mode, setMode] = React.useState("staging");
   const isLive = mode === "live";
+  // Redesign vocabulary: "setup"/"listening" mirror the server's
+  // toWireMode(state.mode) mapping, sent as `lifecycleMode` on the "mode"
+  // WS message. `phase` additionally folds in capture:paused to produce a
+  // 4th value; "review" is a client-only phase introduced by a later task
+  // (never sent by the server).
+  const [lifecycleMode, setLifecycleMode] = React.useState("setup");
   const [listening, setListening] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [presoStarting, setPresoStarting] = React.useState(false);
@@ -207,6 +214,11 @@ function App() {
   // v0.2.0 state: queue backlog, paused capture, pending clarifying question.
   const [queueStats, setQueueStats] = React.useState(null);
   const [capturePaused, setCapturePaused] = React.useState(false);
+  // Derived lifecycle phase: "setup" | "listening" | "paused". Paused is
+  // only meaningful once listening has started; capture:paused messages
+  // received before then (there shouldn't be any) are ignored.
+  const phase =
+    lifecycleMode === "listening" && capturePaused ? "paused" : lifecycleMode;
   const [pendingQuestion, setPendingQuestion] = React.useState(null);
   // v0.3.0 Aegis UI prefs. Local copy of settings.ui so UI feels instant; saves
   // debounced like agentInstructions. Defaults mirror DEFAULT_SETTINGS.ui on
@@ -754,221 +766,218 @@ function App() {
       const hash = JSON.stringify(cleaned);
       if (hash === lastSyncedElementsHashRef.current) return;
       lastSyncedElementsHashRef.current = hash;
-      ws.send(
-        JSON.stringify({ type: "whiteboard:user-elements", elements: cleaned }),
-      );
+      ws.send({ type: "whiteboard:user-elements", elements: cleaned });
     }, 500);
   }
 
   // Persistent WebSocket connection for the lifetime of the app.
   React.useEffect(() => {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
-    wsRef.current = ws;
-
-    ws.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === "config")
-        setTranscriptionEngine(message.transcriptionEngine);
-      if (message.type === "settings") setSettings(message.settings);
-      if (message.type === "transcript:partial") {
-        const text = (message.text ?? "").trim();
-        if (text) {
-          clearTimeout(captionTimerRef.current);
-          setCaptionText(text);
+    const wsClient = createWsClient({
+      onMessage: (message) => {
+        if (message.type === "config")
+          setTranscriptionEngine(message.transcriptionEngine);
+        if (message.type === "settings") setSettings(message.settings);
+        if (message.type === "transcript:partial") {
+          const text = (message.text ?? "").trim();
+          if (text) {
+            clearTimeout(captionTimerRef.current);
+            setCaptionText(text);
+          }
         }
-      }
-      if (message.type === "transcript:committed") {
-        const text = (message.text ?? "").trim();
-        if (text) {
-          clearTimeout(captionTimerRef.current);
-          setCaptionText(text);
-          captionTimerRef.current = setTimeout(() => setCaptionText(""), 3500);
+        if (message.type === "transcript:committed") {
+          const text = (message.text ?? "").trim();
+          if (text) {
+            clearTimeout(captionTimerRef.current);
+            setCaptionText(text);
+            captionTimerRef.current = setTimeout(() => setCaptionText(""), 3500);
+            setTranscriptHistory((prev) => {
+              if (prev.length > 0 && prev[prev.length - 1].status === "queued" && prev[prev.length - 1].text === text) {
+                return prev;
+              }
+              return [
+                ...prev,
+                {
+                  id: `temp-${Date.now()}-${Math.random()}`,
+                  text,
+                  status: "queued",
+                  timestamp: new Date().toISOString()
+                }
+              ].slice(-TRANSCRIPT_HISTORY_LIMIT);
+            });
+          }
+        }
+        if (message.type === "agent:turn-start") {
           setTranscriptHistory((prev) => {
-            if (prev.length > 0 && prev[prev.length - 1].status === "queued" && prev[prev.length - 1].text === text) {
-              return prev;
-            }
+            const filtered = prev.filter((item) => item.status !== "queued");
             return [
-              ...prev,
+              ...filtered,
               {
-                id: `temp-${Date.now()}-${Math.random()}`,
-                text,
-                status: "queued",
-                timestamp: new Date().toISOString()
+                id: message.turnId,
+                text: message.transcript,
+                status: "processing",
+                timestamp: message.timestamp,
+                startedAt: message.timestamp
               }
             ].slice(-TRANSCRIPT_HISTORY_LIMIT);
           });
         }
-      }
-      if (message.type === "agent:turn-start") {
-        setTranscriptHistory((prev) => {
-          const filtered = prev.filter((item) => item.status !== "queued");
-          return [
-            ...filtered,
-            {
-              id: message.turnId,
-              text: message.transcript,
-              status: "processing",
-              timestamp: message.timestamp,
-              startedAt: message.timestamp
-            }
-          ].slice(-TRANSCRIPT_HISTORY_LIMIT);
-        });
-      }
-      if (message.type === "agent:turn-end") {
-        setTranscriptHistory((prev) => {
-          return prev.map((item) => {
-            if (item.id === message.turnId) {
-              return { ...item, status: "completed", durationMs: turnDurationMs(item.startedAt, message.timestamp) };
-            }
-            return item;
+        if (message.type === "agent:turn-end") {
+          setTranscriptHistory((prev) => {
+            return prev.map((item) => {
+              if (item.id === message.turnId) {
+                return { ...item, status: "completed", durationMs: turnDurationMs(item.startedAt, message.timestamp) };
+              }
+              return item;
+            });
           });
-        });
-      }
-      if (message.type === "agent:turn-error") {
-        setTranscriptHistory((prev) => {
-          return prev.map((item) => {
-            if (item.id === message.turnId) {
-              return { ...item, status: "failed", error: message.error, durationMs: turnDurationMs(item.startedAt, message.timestamp) };
-            }
-            return item;
+        }
+        if (message.type === "agent:turn-error") {
+          setTranscriptHistory((prev) => {
+            return prev.map((item) => {
+              if (item.id === message.turnId) {
+                return { ...item, status: "failed", error: message.error, durationMs: turnDurationMs(item.startedAt, message.timestamp) };
+              }
+              return item;
+            });
           });
-        });
-      }
-      if (message.type === "agent:status") {
-        setAgentStatus(message.status);
-        if (message.status === "thinking") setAgentError(false);
-      }
-      if (message.type === "warmup") {
-        setWarmupState({
-          state: message.state,
-          attempt: message.attempt ?? 0,
-          maxAttempts: message.maxAttempts ?? 8,
-        });
-      }
-      if (message.type === "cost") {
-        setCost({ agent: message.agent, transcription: message.transcription });
-      }
-      if (message.type === "mode") {
-        const previousMode = modeRef.current;
-        modeRef.current = message.mode;
-        setMode(message.mode);
-        if (message.mode === "staging") {
-          setTranscriptHistory([]);
-          if (previousMode === "live") {
-            // Returning from live: restore the staged canvas the user was last working on.
-            applyScene(stagingSceneRef.current, { recenter: true });
+        }
+        if (message.type === "agent:status") {
+          setAgentStatus(message.status);
+          if (message.status === "thinking") setAgentError(false);
+        }
+        if (message.type === "warmup") {
+          setWarmupState({
+            state: message.state,
+            attempt: message.attempt ?? 0,
+            maxAttempts: message.maxAttempts ?? 8,
+          });
+        }
+        if (message.type === "cost") {
+          setCost({ agent: message.agent, transcription: message.transcription });
+        }
+        if (message.type === "mode") {
+          const previousMode = modeRef.current;
+          modeRef.current = message.mode;
+          setMode(message.mode);
+          setLifecycleMode(
+            message.lifecycleMode ?? (message.mode === "live" ? "listening" : "setup"),
+          );
+          if (message.mode === "staging") {
+            setTranscriptHistory([]);
+            if (previousMode === "live") {
+              // Returning from live: restore the staged canvas the user was last working on.
+              applyScene(stagingSceneRef.current, { recenter: true });
+            }
           }
         }
-      }
-      if (message.type === "whiteboard:update") {
-        // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
-        const isFreshStarter =
-          Array.isArray(message.elements) &&
-          message.elements.length <= STARTER_ELEMENTS.length + 1;
-        const cleaned = nativeElementsToSkeletonForSync(message.elements ?? []);
-        lastSyncedElementsHashRef.current = JSON.stringify(cleaned);
-        applyScene(message.elements, { recenter: isFreshStarter });
-      }
-      if (message.type === "whiteboard:viewport")
-        applyWhiteboardViewportCommand(message);
-      if (message.type === "error") {
-        setError(message.message);
-        if (/agent/i.test(message.message)) setAgentError(true);
-        else setSttError(true);
-      }
-      if (message.type === "queue:stats") {
-        setQueueStats({
-          pending: message.pending ?? 0,
-          buffered: message.buffered ?? 0,
-          running: !!message.running,
-          paused: !!message.paused,
-          avgTurnMs: message.avgTurnMs ?? 0,
-          ageMs: message.ageMs ?? 0,
-          estimatedCatchupMs: message.estimatedCatchupMs ?? 0,
-        });
-      }
-      if (message.type === "capture:paused") {
-        setCapturePaused(!!message.paused);
-      }
-      if (message.type === "agent:question") {
-        setPendingQuestion({
-          id: message.id,
-          question: message.question,
-          options: Array.isArray(message.options) ? message.options : [],
-          askedAt: message.askedAt,
-        });
-      }
-      if (message.type === "agent:question-resolved") {
-        setPendingQuestion((cur) => (cur && cur.id === message.id ? null : cur));
-      }
-      if (message.type === "mermaid:render") {
-        // Render Mermaid → Excalidraw elements, then inject into the live
-        // scene. The next handleExcalidrawChange will sync them back to the
-        // server so subsequent agent turns see the new shapes.
-        handleMermaidRender(message).catch((err) => {
-          console.error("Mermaid render failed:", err);
-          setError(`Mermaid render failed: ${err.message}`);
-        });
-      }
-      if (message.type === "agent:zone") {
-        const z = message.zone;
-        if (z === "sketches" || z === "structured" || z === "notes") {
-          setActiveZone(z);
+        if (message.type === "whiteboard:update") {
+          // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
+          const isFreshStarter =
+            Array.isArray(message.elements) &&
+            message.elements.length <= STARTER_ELEMENTS.length + 1;
+          const cleaned = nativeElementsToSkeletonForSync(message.elements ?? []);
+          lastSyncedElementsHashRef.current = JSON.stringify(cleaned);
+          applyScene(message.elements, { recenter: isFreshStarter });
         }
-      }
-      // v0.12.0: agent thinking status — tool:start fires when the agent
-      // begins executing a tool. Surface a friendly description.
-      if (message.type === "tool:start" || message.type === "agent:event") {
-        const toolName = message.tool || message.name;
-        if (toolName) {
-          const friendly = {
-            whiteboard_apply: "Editing the canvas",
-            whiteboard_overwrite: "Rebuilding the canvas",
-            render_mermaid: "Rendering Mermaid diagram",
-            ask_user_question: "Asking a clarifying question",
-            declare_zone: "Switching canvas zone",
-          }[toolName] || `Running ${toolName}`;
-          setAgentThinking(friendly);
-          setTimeout(() => setAgentThinking((cur) => cur === friendly ? "" : cur), 3500);
+        if (message.type === "whiteboard:viewport")
+          applyWhiteboardViewportCommand(message);
+        if (message.type === "error") {
+          setError(message.message);
+          if (/agent/i.test(message.message)) setAgentError(true);
+          else setSttError(true);
         }
-      }
-      if (message.type === "agent:status" && message.status === "idle") {
-        setAgentThinking("");
-      }
-      // v0.12.0: surface useful WS-side events as toasts
-      if (message.type === "agent:interrupted") {
-        showToast("Agent interrupted", { variant: "warn" });
-      }
-      if (message.type === "agent:undone") {
-        showToast("Agent turn reverted", { variant: "info" });
-      }
-      if (message.type === "pin:changed") {
-        if (message.pinned === true) showToast(`Pinned ${message.id ? "1 element" : ""}`, { variant: "success" });
-        if (message.pinned === false && message.id) showToast("Unpinned", { variant: "info" });
-        if (message.id === null && Array.isArray(message.all) && message.all.length === 0) showToast("All pins cleared", { variant: "info" });
-      }
-      if (message.type === "nudge:applied") {
-        showToast(`Nudge sent: "${(message.text || "").slice(0, 40)}${(message.text || "").length > 40 ? "..." : ""}"`, { variant: "success" });
-      }
-      if (message.type === "stt:dropped") {
-        // Quiet, but log to console so dev can see what got filtered
-        console.log(`[smart-stt] dropped (${message.reason}): ${message.text}`);
-      }
+        if (message.type === "queue:stats") {
+          setQueueStats({
+            pending: message.pending ?? 0,
+            buffered: message.buffered ?? 0,
+            running: !!message.running,
+            paused: !!message.paused,
+            avgTurnMs: message.avgTurnMs ?? 0,
+            ageMs: message.ageMs ?? 0,
+            estimatedCatchupMs: message.estimatedCatchupMs ?? 0,
+          });
+        }
+        if (message.type === "capture:paused") {
+          setCapturePaused(!!message.paused);
+        }
+        if (message.type === "agent:question") {
+          setPendingQuestion({
+            id: message.id,
+            question: message.question,
+            options: Array.isArray(message.options) ? message.options : [],
+            askedAt: message.askedAt,
+          });
+        }
+        if (message.type === "agent:question-resolved") {
+          setPendingQuestion((cur) => (cur && cur.id === message.id ? null : cur));
+        }
+        if (message.type === "mermaid:render") {
+          // Render Mermaid → Excalidraw elements, then inject into the live
+          // scene. The next handleExcalidrawChange will sync them back to the
+          // server so subsequent agent turns see the new shapes.
+          handleMermaidRender(message).catch((err) => {
+            console.error("Mermaid render failed:", err);
+            setError(`Mermaid render failed: ${err.message}`);
+          });
+        }
+        if (message.type === "agent:zone") {
+          const z = message.zone;
+          if (z === "sketches" || z === "structured" || z === "notes") {
+            setActiveZone(z);
+          }
+        }
+        // v0.12.0: agent thinking status — tool:start fires when the agent
+        // begins executing a tool. Surface a friendly description.
+        if (message.type === "tool:start" || message.type === "agent:event") {
+          const toolName = message.tool || message.name;
+          if (toolName) {
+            const friendly = {
+              whiteboard_apply: "Editing the canvas",
+              whiteboard_overwrite: "Rebuilding the canvas",
+              render_mermaid: "Rendering Mermaid diagram",
+              ask_user_question: "Asking a clarifying question",
+              declare_zone: "Switching canvas zone",
+            }[toolName] || `Running ${toolName}`;
+            setAgentThinking(friendly);
+            setTimeout(() => setAgentThinking((cur) => cur === friendly ? "" : cur), 3500);
+          }
+        }
+        if (message.type === "agent:status" && message.status === "idle") {
+          setAgentThinking("");
+        }
+        // v0.12.0: surface useful WS-side events as toasts
+        if (message.type === "agent:interrupted") {
+          showToast("Agent interrupted", { variant: "warn" });
+        }
+        if (message.type === "agent:undone") {
+          showToast("Agent turn reverted", { variant: "info" });
+        }
+        if (message.type === "pin:changed") {
+          if (message.pinned === true) showToast(`Pinned ${message.id ? "1 element" : ""}`, { variant: "success" });
+          if (message.pinned === false && message.id) showToast("Unpinned", { variant: "info" });
+          if (message.id === null && Array.isArray(message.all) && message.all.length === 0) showToast("All pins cleared", { variant: "info" });
+        }
+        if (message.type === "nudge:applied") {
+          showToast(`Nudge sent: "${(message.text || "").slice(0, 40)}${(message.text || "").length > 40 ? "..." : ""}"`, { variant: "success" });
+        }
+        if (message.type === "stt:dropped") {
+          // Quiet, but log to console so dev can see what got filtered
+          console.log(`[smart-stt] dropped (${message.reason}): ${message.text}`);
+        }
+      },
+      onClose: () => {
+        setListening(false);
+        setStarting(false);
+        setAgentStatus("idle");
+      },
+      onError: () => {
+        setError("Lost connection to the server.");
+      },
     });
-
-    ws.addEventListener("close", () => {
-      setListening(false);
-      setStarting(false);
-      setAgentStatus("idle");
-    });
-
-    ws.addEventListener("error", () => {
-      setError("Lost connection to the server.");
-    });
+    wsRef.current = wsClient;
 
     return () => {
-      ws.close();
+      wsClient.close();
       wsRef.current = null;
     };
   }, []);
@@ -1017,7 +1026,7 @@ function App() {
   async function cancelWarmup() {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "warmup:cancel" }));
+      ws.send({ type: "warmup:cancel" });
     }
   }
 
@@ -1055,10 +1064,10 @@ function App() {
       });
 
       const audioSessionId = crypto.randomUUID();
-      ws.send(JSON.stringify({ type: "audio:start", sessionId: audioSessionId }));
+      ws.send({ type: "audio:start", sessionId: audioSessionId });
       audio = await createAudioStreamer(media, (audioBase64) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "audio", sessionId: audioSessionId, audio: audioBase64 }));
+          ws.send({ type: "audio", sessionId: audioSessionId, audio: audioBase64 });
         }
       });
       setAnalyser(audio.analyser);
@@ -1079,7 +1088,7 @@ function App() {
     audioSessionRef.current = null;
     if (!session) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "stop", sessionId: session.id }));
+      wsRef.current.send({ type: "stop", sessionId: session.id });
     }
     session.media.getTracks().forEach((track) => track.stop());
     await session.audio.close();
@@ -1276,9 +1285,7 @@ function App() {
     try {
       const dataUrl = await captureCanvasDataUrl();
       if (!dataUrl) return;
-      ws.send(
-        JSON.stringify({ type: "whiteboard:screenshot", image: dataUrl }),
-      );
+      ws.send({ type: "whiteboard:screenshot", image: dataUrl });
     } catch (error) {
       console.warn("Failed to export whiteboard screenshot:", error);
     }
