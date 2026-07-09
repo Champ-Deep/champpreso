@@ -3,8 +3,10 @@
  * Aegis design language for the Champ Suite.
  * Champ Ember primary, dark panel, light Excalidraw canvas.
  * Forked from autopreso by Kun Chen (MIT).
+ *
+ * Google Fonts (Space Grotesk, Inter, JetBrains Mono, Fraunces, Caveat)
+ * are loaded via <link> tags in public/index.html, not @import here.
  */
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Caveat:wght@500;600;700&display=swap");
 
 :root {
   /* Champions Group parent brand (kept for back-compat with existing classes) */
@@ -52,30 +54,157 @@
 
   /* Type */
   --font-display: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-body:    "Inter", system-ui, -apple-system, sans-serif;
   --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-accent:  "Fraunces", Georgia, serif;
   --font-hand:    "Caveat", "Comic Sans MS", cursive;
+
+  /* Type scale (modular ratio 1.250) */
+  --fs-caption:  0.75rem;   /* 12 */
+  --fs-sm:       0.875rem;  /* 14 */
+  --fs-base:     1rem;      /* 16 */
+  --fs-lg:       1.125rem;  /* 18 */
+  --fs-h6:       1.25rem;   /* 20 */
+  --fs-h5:       1.5rem;    /* 24 */
+  --fs-h4:       1.875rem;  /* 30 */
+  --fs-h3:       2.25rem;   /* 36 */
+  --fs-h2:       3rem;      /* 48 */
+  --fs-h1:       3.75rem;   /* 60 */
+  --fs-display:  5rem;      /* 80 */
+
+  /* Line heights */
+  --lh-tight:    1.15;
+  --lh-snug:     1.35;
+  --lh-normal:   1.5;
+  --lh-relaxed:  1.6;
+  --lh-loose:    1.8;
+
+  /* Letter spacing */
+  --ls-tight:    -0.04em;
+  --ls-snug:     -0.02em;
+  --ls-normal:   0;
+  --ls-wide:     0.05em;
+  --ls-wider:    0.1em;
+  --ls-widest:   0.15em;
+
+  /* Spacing (8-point with 4-point half step) */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  24px;
+  --s-6:  32px;
+  --s-7:  48px;
+  --s-8:  64px;
+  --s-9:  96px;
+  --s-10: 128px;
 
   /* Borders + shadows */
   --border-subtle:  rgba(255, 255, 255, 0.06);
   --border-default: rgba(255, 255, 255, 0.10);
   --border-strong:  rgba(255, 255, 255, 0.20);
+  --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md:   0 4px 12px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 32px;
 
   /* Radii */
   --r-sm: 4px;
   --r-md: 8px;
   --r-lg: 12px;
   --r-xl: 16px;
+  --r-2xl:  24px;
   --r-full: 9999px;
 
   /* Motion */
   --t-micro: 120ms;
   --t-std: 220ms;
   --t-deliberate: 380ms;
+  --t-hero:       600ms;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in:      cubic-bezier(0.4, 0, 1, 1);
+  --ease-out:     cubic-bezier(0, 0, 0.2, 1);
+
+  /* === Semantic role tokens (use these in components; dark-mode defaults) === */
+  --bg:          var(--champ-ink);
+  --bg-elevated: var(--champ-carbon);
+  --bg-card:     var(--champ-slate);
+  --bg-inset:    var(--champ-steel);
+
+  --surface-0: var(--champ-ink);
+  --surface-1: var(--champ-carbon);
+  --surface-2: var(--champ-slate);
+  --surface-3: var(--champ-steel);
+
+  --fg:          var(--champ-snow);
+  --fg-1:        var(--champ-snow);
+  --fg-2:        var(--champ-cloud);
+  --fg-3:        var(--champ-mist);
+  --text-primary:   var(--champ-snow);
+  --text-secondary: var(--champ-cloud);
+  --text-tertiary:  var(--champ-mist);
+
+  --accent:        var(--champ-ember);
+  --accent-glow:   var(--champ-ember-glow);
+  --accent-deep:   var(--champ-ember-deep);
+
+  --focus-ring:        0 0 0 3px rgba(255, 107, 53, 0.4);
+  --focus-ring-offset: 2px;
 }
+
+/* =========================================================
+   LIGHT THEME OVERRIDE
+   ========================================================= */
+[data-theme="light"] {
+  --bg:          var(--champ-snow);
+  --bg-elevated: var(--champ-paper);
+  --bg-card:     #FFFFFF;
+  --bg-inset:    #E5E7EB;
+
+  --surface-0: var(--champ-snow);
+  --surface-1: var(--champ-paper);
+  --surface-2: #FFFFFF;
+  --surface-3: #E5E7EB;
+
+  --fg:          var(--champ-ink);
+  --fg-1:        var(--champ-ink);
+  --fg-2:        var(--champ-carbon);
+  --fg-3:        var(--champ-mist);
+  --text-primary:   var(--champ-ink);
+  --text-secondary: var(--champ-carbon);
+  --text-tertiary:  var(--champ-mist);
+
+  --border-subtle:  rgba(11, 13, 18, 0.06);
+  --border-default: rgba(11, 13, 18, 0.10);
+  --border-strong:  rgba(11, 13, 18, 0.20);
+
+  --shadow-sm: 0 1px 2px rgba(11, 13, 18, 0.06);
+  --shadow-md: 0 4px 12px rgba(11, 13, 18, 0.08);
+  --shadow-lg: 0 12px 32px rgba(11, 13, 18, 0.12);
+  --shadow-xl: 0 24px 64px rgba(11, 13, 18, 0.16);
+
+  /* Light-mode contrast safety: Ember as text needs to be
+     Ember Deep (#C2410C, 4.95:1 on Snow). The bright Ember
+     stays alive for fills, borders, glows via --champ-ember-glow. */
+  --champ-ember:      #C2410C;
+  --champ-ember-glow: #FF6B35;
+  --champ-ember-deep: #7C2D12;
+  --accent:           #C2410C;
+}
+
+/* =========================================================
+   ANIMATION KEYFRAMES (redesign shell)
+   ========================================================= */
+@keyframes ppPulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:.5}100%{transform:scale(1);opacity:1}}
+@keyframes ppPopIn{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes ppFadeUp{0%{transform:translateY(8px);opacity:0}100%{transform:translateY(0);opacity:1}}
+@keyframes ppDropIn{0%{transform:translate(-50%,-10px);opacity:0}100%{transform:translate(-50%,0);opacity:1}}
+@keyframes ppWave1{0%,100%{height:4px}50%{height:12px}}
+@keyframes ppWave2{0%,100%{height:10px}50%{height:5px}}
+@keyframes ppWave3{0%,100%{height:6px}50%{height:13px}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
 
 /* Aegis dark-panel skin. Activated when the shell has data-panel-theme="dark".
  * Reuses existing class names so nothing else breaks; this just retints. */
@@ -2701,187 +2830,3 @@ button:disabled {
   color: #F4F5F7;
 }
 
-
-/* === CHAMPPRESO v0.15 PATCH START === */
-/* Transcript History readability */
-.status-card + div:has(> .lth-item),
-.live-transcript-history,
-.lth-list,
-.status-card,
-.session-cost-card + * {
-  overflow: visible !important;
-}
-/* Any element whose class contains 'transcript' or 'lth' */
-[class*="transcript"] {
-  overflow: visible !important;
-  white-space: normal !important;
-  text-overflow: unset !important;
-  word-break: break-word !important;
-  hyphens: auto !important;
-}
-[class*="transcript"] input,
-[class*="transcript"] textarea {
-  min-height: 34px !important;
-}
-/* Wrap any item that carries an ellipsis anywhere in the panel */
-.panel *[style*="text-overflow"],
-.panel *[style*="ellipsis"],
-.panel .value {
-  overflow: visible !important;
-  text-overflow: unset !important;
-  white-space: normal !important;
-  word-break: break-word !important;
-}
-/* Panel toggle button z-index above export dropdown */
-.panel-toggle {
-  z-index: 200 !important;
-  pointer-events: auto !important;
-}
-/* Ensure buttons in the panel are always clickable */
-.panel button,
-.panel .export-menu,
-.panel .ui-settings-trigger,
-.panel .status-card,
-.panel .status-mini {
-  position: relative;
-  z-index: 5;
-}
-/* Live action row grid tightening so 4 buttons never wrap and overlap */
-.live-action-row {
-  min-width: 0;
-}
-.live-action-row > button {
-  min-width: 0;
-  overflow: hidden;
-}
-/* Kill any residual palette-row / caption-fab overlap from disabled features */
-.palette-row.hidden, .caption-fab.hidden { display: none !important; }
-/* === CHAMPPRESO v0.15 PATCH END === */
-
-/* === CHAMPPRESO v0.16 STREAMLINE START === */
-/* ---------- Hide clutter in PRESO mode ---------- */
-
-/* Kill the top-right Present/Work FAB entirely - captions are toggled off */
-.caption-fab { display: none !important; }
-
-/* In PRESO mode, session-mode tabs (Strategy/Present/Co-think) already
-   frozen for the session; hide them to reduce noise */
-.shell.mode-live .session-modes { display: none !important; }
-
-/* Hide the Staging/Preso mode toggle in PRESO - Stop button does the same */
-.shell.mode-live .mode-toggle { display: none !important; }
-
-/* Palette row was already user-disabled but kill it here too */
-.palette-row { display: none !important; }
-
-/* ---------- Surface transcript history ---------- */
-
-/* Reorder the panel: transcript history right below live-action-row.
-   Uses flex order so it moves without touching the DOM. */
-.panel { display: flex; flex-direction: column; }
-
-/* Any container that carries the phrase "TRANSCRIPT" or class name */
-[class*="transcript" i] {
-  order: 5 !important;
-  background: rgba(20, 23, 31, 0.55) !important;
-  border: 1px solid color-mix(in srgb, var(--p) 22%, var(--border-default)) !important;
-  border-radius: var(--r-lg) !important;
-  padding: 12px !important;
-  margin: 8px 0 !important;
-  max-height: 320px !important;
-  overflow-y: auto !important;
-  scrollbar-width: thin;
-}
-[class*="transcript" i]::before {
-  content: "📝 LIVE TRANSCRIPT";
-  display: block;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
-  color: var(--g, #FFB088);
-  margin-bottom: 6px;
-}
-
-/* Individual transcript items - wrap fully, add subtle separator */
-[class*="transcript" i] .lth-item,
-[class*="transcript" i] > div,
-[class*="lth-item"] {
-  padding: 6px 0 !important;
-  border-bottom: 1px solid rgba(255,255,255,0.06) !important;
-  font-size: 12.5px !important;
-  line-height: 1.45 !important;
-  color: var(--champ-cloud, #D1D5DB) !important;
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: unset !important;
-  word-break: break-word !important;
-}
-
-/* The "Type a point to add to the board..." input */
-[class*="transcript" i] input[type="text"],
-[class*="transcript" i] textarea {
-  background: var(--champ-ink, #0B0D12) !important;
-  border: 1px solid var(--border-default, rgba(255,255,255,0.10)) !important;
-  color: #fff !important;
-  border-radius: 8px !important;
-  padding: 8px 10px !important;
-  min-height: 34px !important;
-  width: 100% !important;
-  font-size: 13px !important;
-}
-
-/* Ensure Add button doesn't wrap awkwardly */
-[class*="transcript" i] button {
-  min-width: 60px;
-}
-
-/* ---------- Global clickability guards ---------- */
-.panel-toggle { z-index: 300 !important; pointer-events: auto !important; }
-.panel button, .panel .export-menu, .panel .status-card, .panel .status-mini {
-  position: relative;
-  z-index: 5;
-}
-.live-action-row > button { min-width: 0; overflow: hidden; }
-/* === CHAMPPRESO v0.16 STREAMLINE END === */
-
-/* === CHAMPPRESO v0.17 START === */
-/* Nuclear transcript surfacing. Match anything that could plausibly be the
-   transcript panel and force it visible + prominent. */
-[class*="transcript" i],
-[class*="Transcript" i],
-[data-testid*="transcript" i],
-.lth,
-.live-transcript,
-.status-card + div:has(input[placeholder*="board" i]) {
-  order: 2 !important;
-  display: flex !important;
-  flex-direction: column;
-  background: rgba(20, 23, 31, 0.75) !important;
-  border: 2px solid var(--p, #FF6B35) !important;
-  border-radius: 12px !important;
-  padding: 12px !important;
-  margin: 10px 0 !important;
-  max-height: 340px !important;
-  overflow-y: auto !important;
-  box-shadow: 0 0 20px color-mix(in srgb, var(--p, #FF6B35) 22%, transparent) !important;
-}
-[class*="transcript" i]::before,
-.status-card + div:has(input[placeholder*="board" i])::before {
-  content: "📝 LIVE TRANSCRIPT — everyone's contributions land here";
-  display: block;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
-  color: var(--p, #FF6B35);
-  margin-bottom: 8px;
-}
-/* Force wrap and readable font */
-[class*="transcript" i] *, .status-card + div:has(input[placeholder*="board" i]) * {
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: unset !important;
-  word-break: break-word !important;
-}
-/* === CHAMPPRESO v0.17 END === */
