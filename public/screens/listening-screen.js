@@ -131,6 +131,8 @@ export function ListeningScreen({
   onSkipQuestion,
   onPauseResume,
   onUndo,
+  onPinSelection,
+  onClearPins,
   onEnd,
   nudgeSignal = null,
   error = "",
@@ -389,10 +391,35 @@ export function ListeningScreen({
             }),
             "Live captions",
           ),
+          h("div", { className: "ls-drawer-divider" }),
+          h(
+            "div",
+            { className: "ls-drawer-pins" },
+            h(
+              "button",
+              {
+                type: "button",
+                className: "ls-strip-btn ls-drawer-pin-btn",
+                onClick: () => onPinSelection?.(),
+                title: "Pin the selected canvas elements so the agent won't touch them",
+              },
+              "Pin selection",
+            ),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "ls-drawer-pin-clear",
+                onClick: () => onClearPins?.(),
+                title: "Remove all pins",
+              },
+              "Unpin all",
+            ),
+          ),
           h(
             "div",
             { className: "ls-drawer-note" },
-            "Settings live in Setup. End or pause the session to change them.",
+            "Select elements on the canvas, then pin them so the agent leaves them alone. Other settings live in Setup.",
           ),
         )
       : null,

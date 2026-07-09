@@ -1352,6 +1352,8 @@ function App() {
             onSkipQuestion: dismissPendingQuestion,
             onPauseResume: handlePauseToggle,
             onUndo: handleUndoTurn,
+            onPinSelection: pinSelection,
+            onClearPins: clearAllPins,
             onEnd: endToReview,
             nudgeSignal,
             error,

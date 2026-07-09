@@ -27,6 +27,7 @@ import {
   OPENROUTER_AGENT_MODELS,
   OPENAI_TRANSCRIPTION_MODELS,
   MOONSHINE_MODELS,
+  REASONING_EFFORTS,
 } from "../model-catalog.js";
 
 const h = React.createElement;
@@ -93,6 +94,19 @@ function currentAgentModel(settings, provider) {
 function defaultAgentModel(provider) {
   if (provider === "ollama") return "llama3.2";
   return agentModelsFor(provider)[0] || "";
+}
+
+// Providers that talk to an OpenAI-compatible endpoint whose base URL the user
+// may want to override (self-hosted, proxy, alternate region, local runtime).
+const AGENT_BASE_URL_DEFAULT = {
+  openai: "https://api.openai.com/v1",
+  ollama: "http://localhost:11434/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+};
+
+function currentAgentBaseURL(settings, provider) {
+  const agent = settings?.agent ?? {};
+  return agent?.[provider]?.baseURL || AGENT_BASE_URL_DEFAULT[provider] || "";
 }
 
 function currentSttModel(settings, provider) {
@@ -484,6 +498,33 @@ function SettingsSheet({
     setApiKey("");
   }
 
+  // Base URL (OpenAI-compatible endpoint override) and reasoning effort are
+  // provider-scoped agent settings the old AgentEditor exposed. They persist via
+  // the same onSaveSettings channel as provider/model.
+  const providerUsesBaseURL = Object.prototype.hasOwnProperty.call(
+    AGENT_BASE_URL_DEFAULT,
+    agentProvider,
+  );
+  const savedBaseURL = currentAgentBaseURL(settings, agentProvider);
+  const [baseURL, setBaseURL] = React.useState(savedBaseURL);
+  // Re-sync the local mirror when the provider (and thus the saved value) changes.
+  React.useEffect(() => {
+    setBaseURL(savedBaseURL);
+  }, [agentProvider, savedBaseURL]);
+
+  function commitBaseURL() {
+    const value = baseURL.trim();
+    if (!providerUsesBaseURL || value === savedBaseURL) return;
+    onSaveSettings({ agent: { [agentProvider]: { baseURL: value } } });
+  }
+
+  const reasoningEffort =
+    settings?.agent?.openai?.reasoningEffort || REASONING_EFFORTS[0];
+
+  function saveReasoningEffort(next) {
+    onSaveSettings({ agent: { openai: { reasoningEffort: next } } });
+  }
+
   const agentModelOptions = agentModelsFor(agentProvider);
   const sttModelOptions =
     sttProvider === "moonshine" ? MOONSHINE_MODELS : OPENAI_TRANSCRIPTION_MODELS;
@@ -573,6 +614,39 @@ function SettingsSheet({
                     if (e.key === "Enter") {
                       e.preventDefault();
                       commitApiKey();
+                    }
+                  },
+                }),
+              )
+            : null,
+          agentProvider === "openai"
+            ? ssField(
+                "Reasoning",
+                h(
+                  "select",
+                  {
+                    className: "ss-select",
+                    value: reasoningEffort,
+                    onChange: (e) => saveReasoningEffort(e.target.value),
+                  },
+                  REASONING_EFFORTS.map((r) => h("option", { key: r, value: r }, r)),
+                ),
+              )
+            : null,
+          providerUsesBaseURL
+            ? ssField(
+                "Base URL",
+                h("input", {
+                  className: "ss-select",
+                  type: "text",
+                  value: baseURL,
+                  placeholder: AGENT_BASE_URL_DEFAULT[agentProvider] || "",
+                  onChange: (e) => setBaseURL(e.target.value),
+                  onBlur: commitBaseURL,
+                  onKeyDown: (e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitBaseURL();
                     }
                   },
                 }),

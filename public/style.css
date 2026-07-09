@@ -3515,6 +3515,27 @@ button:disabled {
   accent-color: var(--champ-ember);
   cursor: pointer;
 }
+.ls-drawer-pins {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ls-drawer-pin-btn {
+  flex: 1;
+  justify-content: center;
+}
+.ls-drawer-pin-clear {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--champ-mist);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.ls-drawer-pin-clear:hover {
+  color: var(--champ-snow);
+}
 .ls-drawer-note {
   font-size: 11px;
   color: var(--champ-mist);

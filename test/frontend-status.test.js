@@ -67,12 +67,20 @@ test("frontend handles viewport commands from the agent", () => {
   assert.match(syncSource, /action === "set_zoom"/);
 });
 
-test("frontend exposes OpenAI agent base URL and labels the key as API key", () => {
-  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+test("settings sheet exposes agent base URL + reasoning and labels the key as API key", () => {
+  const setupSource = readFileSync(
+    path.join(rootDir, "public", "screens", "setup-screen.js"),
+    "utf8",
+  );
 
-  assert.match(appSource, /const \[openaiBaseURL, setOpenaiBaseURL\] = React\.useState\([\s\S]*settings\.agent\.openai\.baseURL/);
-  assert.match(appSource, /patch\.agent\.openai\.baseURL = openaiBaseURL/);
-  assert.match(appSource, /provider === "openai"[\s\S]*field\([\s\S]*"Base URL"/);
-  assert.match(appSource, /field\([\s\S]*"API key"[\s\S]*placeholder: "configured \(enter to replace\)"/);
-  assert.doesNotMatch(appSource, /"OpenAI key"/);
+  // Base URL (OpenAI-compatible endpoint override) is wired through onSaveSettings.
+  assert.match(setupSource, /const \[baseURL, setBaseURL\] = React\.useState\(savedBaseURL\)/);
+  assert.match(setupSource, /onSaveSettings\(\{ agent: \{ \[agentProvider\]: \{ baseURL: value \} \} \}\)/);
+  assert.match(setupSource, /providerUsesBaseURL[\s\S]*"Base URL"/);
+  // Reasoning effort select for OpenAI, sourced from the shared constant.
+  assert.match(setupSource, /agentProvider === "openai"[\s\S]*"Reasoning"[\s\S]*REASONING_EFFORTS/);
+  assert.match(setupSource, /onSaveSettings\(\{ agent: \{ openai: \{ reasoningEffort: next \} \} \}\)/);
+  // Key field is labeled generically as "API key" with a configured placeholder.
+  assert.match(setupSource, /"API key"[\s\S]*"configured \(enter to replace\)"/);
+  assert.doesNotMatch(setupSource, /"OpenAI key"/);
 });
