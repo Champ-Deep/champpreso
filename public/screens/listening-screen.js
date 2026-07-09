@@ -31,6 +31,12 @@
 //   onSkipQuestion()         — skip / best-guess (clears the question host-side)
 //   onPauseResume()          — toggle server capture pause (pause <-> resume)
 //   onUndo()                 — undo the last agent turn
+//   onInterrupt()            — abort the in-flight agent turn (only while the
+//                             agent is thinking/drawing; POST /api/session/interrupt)
+//   sayText          string  — controlled typed-turn input value (host state)
+//   saySending       bool    — a typed turn is in flight (disables the input/send)
+//   onSayTextChange(text)    — update the typed-turn input value
+//   onSendTypedTurn(text)    — inject typed text as a spoken turn (POST /say)
 //   onEnd()                  — end the session -> flips app phase to "review"
 //                             (stops mic capture); does NOT call /review itself
 //   nudgeSignal     object   — { status: "applied"|"failed", text, reason, nonce }
@@ -113,6 +119,21 @@ const sendIcon = (size = 14) =>
 const checkIcon = (size = 13) =>
   svg([h("path", { key: "a", d: "M20 6 9 17l-5-5" })], size, 2);
 
+// Interrupt = a filled-ish stop square (rounded), matching the strip's line icons.
+const stopIcon = (size = 12) =>
+  svg([h("rect", { key: "a", x: 6, y: 6, width: 12, height: 12, rx: 2 })], size, 2);
+
+// Typed-turn toggle = a small keyboard glyph.
+const keyboardIcon = (size = 15) =>
+  svg(
+    [
+      h("rect", { key: "a", x: 2, y: 6, width: 20, height: 12, rx: 2 }),
+      h("path", { key: "b", d: "M7 10h.01M11 10h.01M15 10h.01M8 14h8" }),
+    ],
+    size,
+    1.5,
+  );
+
 export function ListeningScreen({
   paused = false,
   listening = false,
@@ -131,13 +152,19 @@ export function ListeningScreen({
   onSkipQuestion,
   onPauseResume,
   onUndo,
+  onInterrupt,
   onPinSelection,
   onClearPins,
   onEnd,
+  sayText = "",
+  saySending = false,
+  onSayTextChange,
+  onSendTypedTurn,
   nudgeSignal = null,
   error = "",
 }) {
   const isListening = listening && !paused;
+  const agentBusy = agentStatus === "thinking";
 
   // ---- client-owned session clock (display only; not from the server) ----
   const [clock, setClock] = React.useState(0);
@@ -173,6 +200,16 @@ export function ListeningScreen({
   const [steerEcho, setSteerEcho] = React.useState("");
   const steerInputRef = React.useRef(null);
   const steerAppliedTimerRef = React.useRef(null);
+
+  // ---- typed turn (say): a no-voice path to speak a point into the canvas ----
+  const [typedOpen, setTypedOpen] = React.useState(false);
+  const typedInputRef = React.useRef(null);
+
+  function submitTypedTurn() {
+    const text = String(sayText || "").trim();
+    if (!text || saySending) return;
+    onSendTypedTurn?.(text);
+  }
 
   React.useEffect(() => {
     const id = setInterval(
@@ -334,6 +371,22 @@ export function ListeningScreen({
         "Undo",
       ),
 
+      // Only surfaced while the agent is mid-turn — interrupting an idle agent
+      // is a no-op. Shares the ghost strip-button style with Undo/End.
+      !paused && agentBusy
+        ? h(
+            "button",
+            {
+              type: "button",
+              className: `${stripBtn} ls-interrupt`,
+              onClick: () => onInterrupt?.(),
+              title: "Stop the agent mid-turn",
+            },
+            stopIcon(),
+            "Interrupt",
+          )
+        : null,
+
       h(
         "button",
         { type: "button", className: stripBtn, onClick: onEnd },
@@ -462,6 +515,46 @@ export function ListeningScreen({
             ),
           )
         : null,
+      // Typed-turn row — a distinct, lighter input for "type what you'd have
+      // said aloud". Toggled open by the keyboard button on the steer bar.
+      typedOpen
+        ? h(
+            "div",
+            { className: "ls-typed" },
+            h("span", { className: "ls-typed-eyebrow" }, "SAY IT · NO MIC"),
+            h("input", {
+              ref: typedInputRef,
+              type: "text",
+              className: "ls-typed-input",
+              value: sayText,
+              placeholder: "Type what you'd have said aloud…",
+              maxLength: 500,
+              disabled: saySending,
+              onChange: (e) => onSayTextChange?.(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitTypedTurn();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setTypedOpen(false);
+                }
+              },
+            }),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "ls-typed-send",
+                disabled: saySending || !String(sayText || "").trim(),
+                onClick: submitTypedTurn,
+                title: "Add to the board (Enter)",
+                "aria-label": "Send typed turn",
+              },
+              saySending ? "…" : sendIcon(14),
+            ),
+          )
+        : null,
       h(
         "div",
         {
@@ -471,6 +564,21 @@ export function ListeningScreen({
               steerFocused || steerValue ? "var(--champ-ember)" : "rgba(255,255,255,0.1)",
           },
         },
+        h(
+          "button",
+          {
+            type: "button",
+            className: `ls-type-toggle${typedOpen ? " active" : ""}`,
+            onClick: () => {
+              setTypedOpen((v) => !v);
+              if (!typedOpen) setTimeout(() => typedInputRef.current?.focus(), 30);
+            },
+            title: "Type a turn instead of speaking it",
+            "aria-label": "Type a turn",
+            "aria-pressed": typedOpen,
+          },
+          keyboardIcon(),
+        ),
         h("input", {
           ref: steerInputRef,
           type: "text",

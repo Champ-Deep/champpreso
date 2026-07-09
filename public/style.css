@@ -2308,6 +2308,86 @@ button:disabled {
 }
 .ls-steer-send:hover { background: var(--champ-ember-glow) !important; }
 
+/* ---- interrupt (strip): reuses .ls-strip-btn, tinted ember to read as a
+   stop-the-agent action. Only mounted while the agent is mid-turn. ---- */
+.ls-interrupt {
+  border-color: rgba(255, 107, 53, 0.5);
+  color: var(--champ-ember-glow);
+  animation: ppFadeUp 0.18s both;
+}
+.ls-interrupt:hover {
+  border-color: var(--champ-ember);
+  background: rgba(255, 107, 53, 0.12);
+  color: var(--champ-snow);
+}
+
+/* ---- typed-turn toggle: a quiet keyboard button on the left of the steer bar.
+   Lighter than the ember send button — this is "type it", not "send a steer". ---- */
+.ls-type-toggle {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--champ-mist);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.ls-type-toggle:hover { color: var(--champ-snow); background: rgba(255, 255, 255, 0.06); }
+.ls-type-toggle.active { color: var(--champ-ember); background: rgba(255, 107, 53, 0.1); }
+
+/* ---- typed-turn row: a distinct, lighter input above the steer bar. Matches
+   the steer bar's blur/radius/shadow but carries no ember border by default. ---- */
+.ls-typed {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(11, 13, 18, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px 8px 6px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  animation: ppFadeUp 0.2s both;
+}
+.ls-typed-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--champ-mist);
+  flex: none;
+}
+.ls-typed-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--champ-snow);
+  font-size: 13px;
+}
+.ls-typed-input:disabled { opacity: 0.6; }
+.ls-typed-send {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: none;
+  border-radius: 7px;
+  background: var(--champ-ember);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, opacity 0.12s;
+}
+.ls-typed-send:hover:not(:disabled) { background: var(--champ-ember-glow); }
+.ls-typed-send:disabled { background: #2A2F3D; cursor: default; opacity: 0.7; }
+
 /* ---- floating error pill (live) ---- */
 .ls-error {
   position: absolute;
