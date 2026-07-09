@@ -25,6 +25,7 @@ import {
   resetSession as apiResetSession,
 } from "./api-client.js";
 import { createWsClient } from "./ws-client.js";
+import { startMicCapture } from "./mic-capture.js";
 
 // v0.5.0: Mermaid integration. Loaded lazily on first render_mermaid call so
 // the ~200KB Mermaid bundle doesn't slow first paint. The import promise is
@@ -41,7 +42,6 @@ async function getMermaidToExcalidraw() {
   return mermaidToExcalidrawPromise;
 }
 
-const SAMPLE_RATE = 24000;
 const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
 const OPENAI_AGENT_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
 const CODEX_AGENT_MODELS = ["gpt-5.5-fast", "gpt-5.5", "gpt-5.4"];
@@ -1050,35 +1050,27 @@ function App() {
     setSttError(false);
     setStarting(true);
 
-    let media = null;
     let audio = null;
     try {
-      const audioConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      };
-      if (mic.deviceId) audioConstraints.deviceId = { exact: mic.deviceId };
-      media = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-      });
-
       const audioSessionId = crypto.randomUUID();
       ws.send({ type: "audio:start", sessionId: audioSessionId });
-      audio = await createAudioStreamer(media, (audioBase64) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send({ type: "audio", sessionId: audioSessionId, audio: audioBase64 });
-        }
+      audio = await startMicCapture({
+        deviceId: mic.deviceId,
+        onChunk: (audioBase64) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send({ type: "audio", sessionId: audioSessionId, audio: audioBase64 });
+          }
+        },
       });
       setAnalyser(audio.analyser);
-      audioSessionRef.current = { media, audio, id: audioSessionId };
+      audioSessionRef.current = { media: audio.media, audio, id: audioSessionId };
       setListening(true);
       setStarting(false);
     } catch (err) {
       setError(err.message);
       setMicError(true);
       setStarting(false);
-      media?.getTracks().forEach((track) => track.stop());
+      audio?.media?.getTracks().forEach((track) => track.stop());
       await audio?.close();
     }
   }
@@ -3017,74 +3009,6 @@ function select(value, onChange, options, disabled) {
       React.createElement("option", { key: option, value: option }, option),
     ),
   );
-}
-
-async function createAudioStreamer(media, onChunk) {
-  const context = new AudioContext();
-  const source = context.createMediaStreamSource(media);
-  const processor = context.createScriptProcessor(4096, 1, 1);
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 1024;
-  analyser.smoothingTimeConstant = 0.85;
-  let carry = new Float32Array(0);
-
-  processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer.getChannelData(0);
-    const resampled = resample(input, context.sampleRate, SAMPLE_RATE, carry);
-    carry = resampled.carry;
-    if (resampled.samples.length > 0) {
-      onChunk(pcm16ToBase64(resampled.samples));
-    }
-  };
-
-  source.connect(analyser);
-  source.connect(processor);
-  processor.connect(context.destination);
-
-  return {
-    analyser,
-    close: async () => {
-      processor.disconnect();
-      source.disconnect();
-      analyser.disconnect();
-      await context.close();
-    },
-  };
-}
-
-function resample(input, fromRate, toRate, carry) {
-  const merged = new Float32Array(carry.length + input.length);
-  merged.set(carry);
-  merged.set(input, carry.length);
-
-  const ratio = fromRate / toRate;
-  const outputLength = Math.floor((merged.length - 1) / ratio);
-  const output = new Float32Array(outputLength);
-
-  for (let index = 0; index < outputLength; index += 1) {
-    const sourceIndex = index * ratio;
-    const left = Math.floor(sourceIndex);
-    const right = Math.min(left + 1, merged.length - 1);
-    const weight = sourceIndex - left;
-    output[index] = merged[left] * (1 - weight) + merged[right] * weight;
-  }
-
-  const consumed = Math.floor(outputLength * ratio);
-  return { samples: output, carry: merged.slice(consumed) };
-}
-
-function pcm16ToBase64(samples) {
-  const pcm = new Int16Array(samples.length);
-  for (let index = 0; index < samples.length; index += 1) {
-    const sample = Math.max(-1, Math.min(1, samples[index]));
-    pcm[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-  }
-  const bytes = new Uint8Array(pcm.buffer);
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
-  }
-  return btoa(binary);
 }
 
 // Convert Excalidraw native elements back into the simple "skeleton" shape the
