@@ -1324,7 +1324,12 @@ button:disabled {
 /* Empty-canvas hint (design showCanvasHint). */
 .setup-canvas-hint {
   position: absolute;
-  left: 50%;
+  /* Centered within the canvas area actually visible next to the 284px
+     setup rail (.setup-rail's width, below), not the full canvas-wrap
+     width - the rail overlays the canvas rather than shrinking it (design
+     intent: the canvas stays one continuous surface), so this hint has to
+     correct for that itself. */
+  left: calc(50% + 142px);
   top: 44%;
   transform: translate(-50%, -50%);
   text-align: center;
