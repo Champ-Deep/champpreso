@@ -2830,3 +2830,494 @@ button:disabled {
   color: #F4F5F7;
 }
 
+
+/* ============================================================================
+   === Setup screen (redesign) ===
+   Translated from docs/design-handoff/frontend-source/ChampPreso-Shell.dc.html
+   (SETUP RAIL + SETTINGS SHEET). Overlays the full-bleed canvas during the
+   pre-session "setup" phase. Values match the design source's inline styles;
+   colours resolve through the Task 2 --champ-* tokens.
+   ========================================================================== */
+
+/* In setup the legacy right panel is unmounted, so collapse the shell to a
+   single full-width canvas column (the rail floats over it). */
+.shell.mode-staging {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Empty-canvas hint (design showCanvasHint). */
+.setup-canvas-hint {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #9CA3AF;
+  pointer-events: none;
+  max-width: 380px;
+  z-index: 5;
+}
+.setup-canvas-hint .sch-lead {
+  font-family: "Caveat", cursive;
+  font-size: 26px;
+  color: #6B7280;
+}
+.setup-canvas-hint .sch-sub {
+  font-family: var(--font-body);
+  font-size: 13px;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+/* ---- Setup rail ---- */
+.setup-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 284px;
+  background: var(--champ-ink);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 20px;
+  overflow-y: auto;
+  color: var(--champ-snow);
+  z-index: 24;
+}
+.setup-brand {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.setup-brand-mark { color: var(--champ-ember); }
+.setup-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--champ-mist);
+}
+.setup-intent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-intent > label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--champ-cloud);
+}
+.setup-intent textarea {
+  background: var(--champ-carbon);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--champ-snow);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 80px;
+  resize: vertical;
+  outline: none;
+}
+.setup-intent textarea:focus {
+  border-color: var(--champ-ember);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
+}
+.setup-intent-hint {
+  font-size: 11.5px;
+  color: var(--champ-mist);
+  line-height: 1.5;
+}
+.setup-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--champ-cloud);
+  cursor: pointer;
+}
+.setup-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--champ-ember);
+  cursor: pointer;
+}
+.setup-ghost-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--champ-cloud);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s;
+}
+.setup-ghost-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--champ-slate);
+}
+.setup-ghost-btn:disabled { opacity: 0.6; cursor: default; }
+.setup-ghost-btn svg { flex: none; }
+.setup-restored {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--champ-verdant);
+  margin-top: -8px;
+}
+.setup-restored.err { color: #F87171; }
+.setup-spacer { flex: 1; }
+
+/* ---- Seed affordance ---- */
+.setup-seed {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-seed-lead {
+  font-size: 12px;
+  color: var(--champ-mist);
+  line-height: 1.55;
+}
+.setup-seed-toggle {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--champ-ember);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.setup-seed-toggle:hover { color: var(--champ-ember-glow); }
+.setup-seed-input {
+  background: var(--champ-carbon);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--champ-snow);
+  font-size: 12.5px;
+  line-height: 1.5;
+  min-height: 64px;
+  resize: vertical;
+  outline: none;
+  width: 100%;
+}
+.setup-seed-input:focus {
+  border-color: var(--champ-ember);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
+}
+.setup-seed-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.setup-seed-feedback {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--champ-verdant);
+}
+.setup-seed-run {
+  background: var(--champ-slate);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--champ-snow);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.setup-seed-run:hover:not(:disabled) { border-color: var(--champ-ember); }
+.setup-seed-run:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- Start listening + readiness ---- */
+.setup-start {
+  height: 46px;
+  background: var(--champ-ember);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255, 107, 53, 0.3);
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.setup-start:hover:not(:disabled) {
+  background: var(--champ-ember-glow);
+  transform: translateY(-1px);
+  box-shadow: 0 0 32px rgba(255, 107, 53, 0.5);
+}
+.setup-start:disabled { opacity: 0.7; cursor: default; }
+.sr-ready {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--champ-mist);
+}
+.sr-ready-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--champ-verdant);
+  flex: none;
+}
+.sr-ready-dot.warming {
+  background: var(--champ-amber);
+  animation: ppPulse 1.2s ease-in-out infinite;
+}
+
+/* ---- Settings sheet ---- */
+.settings-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 13, 18, 0.35);
+  z-index: 38;
+}
+.settings-sheet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 428px;
+  max-width: 90vw;
+  background: var(--champ-carbon);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 24px 0 64px rgba(0, 0, 0, 0.4);
+  z-index: 40;
+  color: var(--champ-snow);
+  display: flex;
+  flex-direction: column;
+  animation: ppFadeUp 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.ss-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 24px 0;
+}
+.ss-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.ss-spacer { flex: 1; }
+.ss-close {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--champ-mist);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.ss-close:hover {
+  color: var(--champ-snow);
+  background: rgba(255, 255, 255, 0.06);
+}
+.ss-note {
+  padding: 6px 24px 0;
+  font-size: 12px;
+  color: var(--champ-mist);
+  line-height: 1.5;
+}
+.ss-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.ss-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ss-group-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--champ-mist);
+}
+.ss-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ss-field-label {
+  font-size: 12px;
+  color: var(--champ-cloud);
+}
+.ss-select {
+  height: 34px;
+  background: var(--champ-ink);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--champ-snow);
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+  width: 100%;
+}
+.ss-select:focus {
+  border-color: var(--champ-ember);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
+}
+.ss-help {
+  font-size: 11.5px;
+  color: var(--champ-mist);
+  line-height: 1.5;
+}
+.ss-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ss-seg {
+  display: flex;
+  background: var(--champ-ink);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+.ss-seg-btn {
+  flex: 1;
+  padding: 8px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--champ-mist);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  line-height: 1.35;
+}
+.ss-seg-btn:hover { color: var(--champ-snow); }
+.ss-seg-btn.active {
+  background: var(--champ-slate);
+  color: var(--champ-snow);
+}
+.ss-seg-sub {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  opacity: 0.65;
+}
+.ss-seg-compact { display: inline-flex; }
+.ss-seg-btn-compact {
+  flex: 0 0 auto;
+  padding: 5px 16px;
+  line-height: 1;
+}
+.ss-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ss-row-label {
+  font-size: 12px;
+  color: var(--champ-cloud);
+  width: 92px;
+}
+.ss-swatches {
+  display: flex;
+  gap: 8px;
+}
+.ss-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.12s;
+  padding: 0;
+}
+.ss-swatch:hover { transform: scale(1.12); }
+.ss-swatch.active { border-color: var(--champ-snow); }
+.ss-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--champ-cloud);
+  cursor: pointer;
+}
+.ss-check input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--champ-ember);
+  cursor: pointer;
+}
+.ss-mic-grant {
+  font-size: 11.5px;
+  color: var(--champ-mist);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ss-mic-grant-btn {
+  background: var(--champ-slate);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--champ-snow);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.ss-mic-level {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ss-mic-level-label {
+  font-size: 12px;
+  color: var(--champ-cloud);
+}
+.ss-mic-bars {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 16px;
+}
+.ss-mic-bars span {
+  width: 3px;
+  background: var(--champ-verdant);
+  border-radius: 2px;
+}
+.ss-mic-bars .b1 { animation: ppWave1 0.8s ease-in-out infinite; }
+.ss-mic-bars .b2 { animation: ppWave2 0.7s ease-in-out infinite; }
+.ss-mic-bars .b3 { animation: ppWave3 0.95s ease-in-out infinite; }
+.ss-mic-hint {
+  font-size: 11.5px;
+  color: var(--champ-mist);
+}
+/* Readiness footer inside the sheet (design lines 218-221). */
+.settings-sheet .sr-ready.in-sheet {
+  padding: 14px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 9.5px;
+}
+.settings-sheet .sr-ready.in-sheet .sr-ready-dot {
+  width: 6px;
+  height: 6px;
+}

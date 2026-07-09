@@ -30,6 +30,17 @@ import {
   createExcalidrawSync,
   nativeElementsToSkeletonForSync,
 } from "./excalidraw-sync.js";
+import { SetupScreen } from "./screens/setup-screen.js";
+import {
+  REASONING_EFFORTS,
+  OPENAI_AGENT_MODELS,
+  CODEX_AGENT_MODELS,
+  GROQ_AGENT_MODELS,
+  CEREBRAS_AGENT_MODELS,
+  OPENROUTER_AGENT_MODELS,
+  OPENAI_TRANSCRIPTION_MODELS,
+  MOONSHINE_MODELS,
+} from "./model-catalog.js";
 
 // v0.5.0: Mermaid integration. Loaded lazily on first render_mermaid call so
 // the ~200KB Mermaid bundle doesn't slow first paint. The import promise is
@@ -46,48 +57,9 @@ async function getMermaidToExcalidraw() {
   return mermaidToExcalidrawPromise;
 }
 
-const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
-const OPENAI_AGENT_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
-const CODEX_AGENT_MODELS = ["gpt-5.5-fast", "gpt-5.5", "gpt-5.4"];
-// Groq's fast catalog. llama-3.3-70b-versatile is the strongest tool-caller.
-// llama-3.3-70b-specdec is even faster (~750 tok/s) via speculative decoding.
-const GROQ_AGENT_MODELS = [
-  "llama-3.3-70b-versatile",
-  "llama-3.3-70b-specdec",
-  "llama-3.1-70b-versatile",
-  "llama-3.1-8b-instant",
-  "qwen-2.5-32b",
-  "deepseek-r1-distill-llama-70b",
-];
-// Cerebras catalog. llama-3.3-70b runs ~2000 tok/s. The smaller models are
-// useful when rate limits become the bottleneck.
-const CEREBRAS_AGENT_MODELS = [
-  "llama-3.3-70b",
-  "llama3.1-70b",
-  "llama3.1-8b",
-  "qwen-3-32b",
-];
-// Common OpenRouter model slugs. The picker accepts free text so any
-// OpenRouter slug works; these are just sensible defaults for the dropdown.
-const OPENROUTER_AGENT_MODELS = [
-  "deepseek/deepseek-v4-flash",
-  "deepseek/deepseek-v4-pro",
-  "anthropic/claude-3.5-sonnet",
-  "anthropic/claude-3.7-sonnet",
-  "anthropic/claude-haiku-4.5",
-  "openai/gpt-5.5",
-  "openai/gpt-5.4-mini",
-  "google/gemini-2.5-pro",
-  "meta-llama/llama-3.3-70b-instruct",
-  "x-ai/grok-3",
-];
-const OPENAI_TRANSCRIPTION_MODELS = [
-  "gpt-realtime-whisper",
-  "gpt-4o-transcribe",
-  "gpt-4o-mini-transcribe",
-  "whisper-1",
-];
-const MOONSHINE_MODELS = ["tiny", "small", "medium"];
+// Model / option catalogs now live in public/model-catalog.js and are imported
+// above so the legacy status-card editors and the redesigned Setup settings
+// sheet share one source of truth.
 // Cap the Live Transcript History so long presos don't grow the array unbounded.
 // Mirrors the server-side turnHistory cap in whiteboard-session.js.
 const TRANSCRIPT_HISTORY_LIMIT = 50;
@@ -1286,11 +1258,27 @@ function App() {
     React.createElement(
       "section",
       { className: "canvas-wrap", ref: canvasWrapRef },
-      // Onboarding ribbon (first-launch only; dismissable).
-      isLive && uiPrefs.onboarding
-        ? React.createElement(OnboardingRibbon, {
-            onDismiss: () => patchUiPref("onboarding", false),
-            key: "ob",
+      // Setup screen (redesign). Overlays the full-bleed canvas while in the
+      // pre-session "setup" phase, replacing the old staging side panel.
+      phase === "setup"
+        ? React.createElement(SetupScreen, {
+            key: "setup-screen",
+            excalidrawApi: api,
+            onStarted: startPreso,
+            wsClient: wsRef.current,
+            warmupState,
+            settings,
+            onSaveSettings: saveSettings,
+            agentInstructions,
+            onAgentInstructionsChange: handleAgentInstructionsChange,
+            mic,
+            onMicChange: (next) => {
+              setMic(next);
+              saveStoredMic(next);
+            },
+            uiPrefs,
+            onPatchUiPref: patchUiPref,
+            starting: presoStarting,
           })
         : null,
       // Canvas palette swatch row (PRESO only, if enabled).
@@ -1341,41 +1329,6 @@ function App() {
                   onClick: () => dismissToast(t.id),
                 },
                 React.createElement("span", { className: "toast-text" }, t.text),
-              ),
-            ),
-          )
-        : null,
-      // v0.9.0: Resume last session toast (STAGING only).
-      !isLive && resumeOffer
-        ? React.createElement(
-            "div",
-            { className: "resume-toast", key: "resume-toast" },
-            React.createElement(
-              "div",
-              { className: "resume-text" },
-              React.createElement("b", null, "Resume last session?"),
-              ` Found a ${resumeOffer.count}-element snapshot from ${resumeOffer.ageMin} minutes ago.`,
-            ),
-            React.createElement(
-              "div",
-              { className: "resume-actions" },
-              React.createElement(
-                "button",
-                {
-                  type: "button",
-                  className: "resume-yes",
-                  onClick: resumeLastSession,
-                },
-                "Resume",
-              ),
-              React.createElement(
-                "button",
-                {
-                  type: "button",
-                  className: "resume-no",
-                  onClick: discardResumeOffer,
-                },
-                "Discard",
               ),
             ),
           )
@@ -1495,7 +1448,10 @@ function App() {
           )
         : null,
     ),
-    React.createElement(
+    // The legacy side panel is superseded by SetupScreen in the setup phase.
+    // It still owns the live/paused surface (redesigned by later tasks).
+    phase !== "setup"
+      ? React.createElement(
       "aside",
       { className: "panel" },
       React.createElement(
@@ -1511,91 +1467,15 @@ function App() {
             React.createElement("span", { className: "preso" }, "Preso"),
           ),
         ),
-        // v0.7.0 Session Mode tabs row (always visible).
-        React.createElement(
-          "div",
-          { className: "session-modes" },
-          ["strategy", "presentation", "cothinking"].map((m) =>
-            React.createElement(
-              "button",
-              {
-                key: m,
-                type: "button",
-                className: `sm-tab ${uiPrefs.sessionMode === m ? "active" : ""}`,
-                onClick: () => patchUiPref("sessionMode", m),
-                title:
-                  m === "strategy"
-                    ? "Solo strategy. Agent listens longer, asks more, commits to fewer outputs."
-                    : m === "presentation"
-                      ? "Live presentation. Agent draws aggressively, polished output, captions on."
-                      : "Co-thinking. Multi-speaker friendly, tracks who said what, balances diagrams + notes.",
-              },
-              React.createElement(
-                "span",
-                { className: "sm-tab-label" },
-                m === "strategy" ? "Strategy" : m === "presentation" ? "Present" : "Co-think",
-              ),
-            ),
-          ),
-          React.createElement(
-            "div",
-            {
-              className: `mode-toggle mode-toggle-${mode}`,
-              role: "group",
-              "aria-label": "Mode",
-            },
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: `mode-toggle-option ${mode === "staging" ? "active" : ""}`,
-                onClick: () => {
-                  if (mode !== "staging") backToStaging();
-                },
-                disabled: presoStarting,
-                title: "Staging mode",
-                "aria-pressed": mode === "staging",
-              },
-              "Staging",
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: `mode-toggle-option ${mode === "live" ? "active" : ""}`,
-                onClick: () => {
-                  if (mode !== "live") startPreso();
-                },
-                disabled: presoStarting,
-                title: presoStarting ? "Starting..." : "Preso mode",
-                "aria-pressed": mode === "live",
-              },
-              presoStarting && mode === "staging" ? "..." : "Preso",
-            ),
-          ),
-        ),
         React.createElement(
           "p",
           null,
-          mode === "staging"
-            ? "Drop keywords, diagrams, or images on the canvas. They will be used as reference during the preso."
-            : "Just talk through your ideas. Let the agent whiteboard for you.",
+          "Just talk through your ideas. Let the agent whiteboard for you.",
         ),
       ),
       React.createElement(
         "div",
         { className: "controls" },
-        mode === "staging"
-          ? React.createElement(
-              "button",
-              {
-                className: "start-preso",
-                onClick: startPreso,
-                disabled: presoStarting,
-              },
-              presoStarting ? "Starting..." : "Start Preso →",
-            )
-          : null,
         isLive
           ? React.createElement(
               "div",
@@ -1982,115 +1862,6 @@ function App() {
             )
           )
         : null,
-      mode === "staging"
-        ? React.createElement(
-            "div",
-            { className: "agent-instructions" },
-            React.createElement(
-              "label",
-              {
-                className: "agent-instructions-label",
-                htmlFor: "agent-instructions-input",
-              },
-              "Agent instructions",
-            ),
-            React.createElement("textarea", {
-              id: "agent-instructions-input",
-              className: "agent-instructions-input",
-              value: agentInstructions,
-              onChange: (e) => handleAgentInstructionsChange(e.target.value),
-              placeholder:
-                "Optional. Tell the agent your preferences - e.g. 'Use a tight 4-color palette', 'Prefer drawings over text', 'Be funny'.",
-              rows: 4,
-              spellCheck: true,
-            }),
-            React.createElement(
-              "p",
-              { className: "agent-instructions-hint" },
-              "Saved automatically. Takes effect on next Start Preso.",
-            ),
-          )
-        : null,
-      mode === "staging"
-        ? React.createElement(
-            "div",
-            {
-              className: `notes-pane ${notesDragActive ? "dragging" : ""}`,
-              onDragOver: (e) => {
-                e.preventDefault();
-                if (!notesDragActive) setNotesDragActive(true);
-              },
-              onDragEnter: (e) => {
-                e.preventDefault();
-                setNotesDragActive(true);
-              },
-              onDragLeave: (e) => {
-                e.preventDefault();
-                if (e.currentTarget.contains(e.relatedTarget)) return;
-                setNotesDragActive(false);
-              },
-              onDrop: handleNotesDrop,
-            },
-            React.createElement(
-              "div",
-              { className: "notes-header" },
-              React.createElement(
-                "label",
-                {
-                  className: "notes-label",
-                  htmlFor: "notes-and-transcripts-input",
-                },
-                "Notes & Transcripts",
-              ),
-              React.createElement(
-                "div",
-                { className: "notes-meta" },
-                React.createElement(
-                  "span",
-                  { className: "notes-counter" },
-                  `${notesAndTranscripts.length.toLocaleString()} / ${NOTES_MAX_CHARS.toLocaleString()}`,
-                ),
-                notesAndTranscripts.length > 0
-                  ? React.createElement(
-                      "button",
-                      {
-                        type: "button",
-                        className: "notes-clear",
-                        onClick: clearNotesAndTranscripts,
-                        title: "Clear all notes and transcripts",
-                      },
-                      "Clear",
-                    )
-                  : null,
-              ),
-            ),
-            React.createElement("textarea", {
-              id: "notes-and-transcripts-input",
-              className: "notes-input",
-              value: notesAndTranscripts,
-              onChange: (e) => handleNotesAndTranscriptsChange(e.target.value),
-              placeholder:
-                "Drop .txt, .md, .vtt, .srt files here, or paste meeting notes, prior transcripts, briefs, or any reference material the agent should know about. The agent will read this on Start Preso and treat it as background context.",
-              rows: 8,
-              spellCheck: true,
-            }),
-            notesAttachFlash
-              ? React.createElement("div", { className: "notes-flash" }, notesAttachFlash)
-              : null,
-            React.createElement(
-              "p",
-              { className: "notes-hint" },
-              "Saved automatically. Takes effect on next Start Preso. Drop files anywhere on this panel.",
-            ),
-            notesDragActive
-              ? React.createElement(
-                  "div",
-                  { className: "notes-drop-overlay" },
-                  "Drop to attach",
-                )
-              : null,
-          )
-        : null,
       error ? React.createElement("div", { className: "error" }, error) : null,
       // UI Settings drawer trigger (always visible, bottom of panel above footer).
       React.createElement(
@@ -2112,7 +1883,8 @@ function App() {
             key: "ui-settings",
           })
         : null,
-    ),
+    )
+      : null,
   );
 }
 
@@ -3456,36 +3228,6 @@ function ZoneChip({ zone }) {
 }
 
 // Onboarding ribbon. First-launch only. Dismissable, persists choice.
-function OnboardingRibbon({ onDismiss }) {
-  return React.createElement(
-    "div",
-    { className: "onboarding-ribbon", role: "status" },
-    React.createElement(
-      "span",
-      null,
-      React.createElement("b", null, "Try this. "),
-      "Pick an agent ",
-      React.createElement("span", { className: "step" }, "→"),
-      " click ",
-      React.createElement("b", null, "Start Preso"),
-      " ",
-      React.createElement("span", { className: "step" }, "→"),
-      " speak for 30 seconds.",
-    ),
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: "x",
-        onClick: onDismiss,
-        title: "Dismiss",
-        "aria-label": "Dismiss",
-      },
-      "×",
-    ),
-  );
-}
-
 // Canvas-level palette swatch row. Shifts down 50px when onboarding ribbon
 // is up so they never collide.
 const CANVAS_PALETTES = {
