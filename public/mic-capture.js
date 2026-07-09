@@ -36,37 +36,42 @@ export async function startMicCapture({ deviceId, onChunk } = {}) {
     audio: audioConstraints,
   });
 
-  const context = new AudioContext();
-  const source = context.createMediaStreamSource(media);
-  const processor = context.createScriptProcessor(4096, 1, 1);
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 1024;
-  analyser.smoothingTimeConstant = 0.85;
-  let carry = new Float32Array(0);
+  try {
+    const context = new AudioContext();
+    const source = context.createMediaStreamSource(media);
+    const processor = context.createScriptProcessor(4096, 1, 1);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.85;
+    let carry = new Float32Array(0);
 
-  processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer.getChannelData(0);
-    const resampled = resample(input, context.sampleRate, SAMPLE_RATE, carry);
-    carry = resampled.carry;
-    if (resampled.samples.length > 0) {
-      onChunk(pcm16ToBase64(resampled.samples));
-    }
-  };
+    processor.onaudioprocess = (event) => {
+      const input = event.inputBuffer.getChannelData(0);
+      const resampled = resample(input, context.sampleRate, SAMPLE_RATE, carry);
+      carry = resampled.carry;
+      if (resampled.samples.length > 0) {
+        onChunk(pcm16ToBase64(resampled.samples));
+      }
+    };
 
-  source.connect(analyser);
-  source.connect(processor);
-  processor.connect(context.destination);
+    source.connect(analyser);
+    source.connect(processor);
+    processor.connect(context.destination);
 
-  return {
-    media,
-    analyser,
-    close: async () => {
-      processor.disconnect();
-      source.disconnect();
-      analyser.disconnect();
-      await context.close();
-    },
-  };
+    return {
+      media,
+      analyser,
+      close: async () => {
+        processor.disconnect();
+        source.disconnect();
+        analyser.disconnect();
+        await context.close();
+      },
+    };
+  } catch (error) {
+    media.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
 }
 
 function resample(input, fromRate, toRate, carry) {
