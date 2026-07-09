@@ -7,6 +7,23 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import { STARTER_ELEMENTS } from "./starter-elements.js";
+import {
+  getConfig as apiGetConfig,
+  saveSettings as apiSaveSettings,
+  startSession as apiStartSession,
+  backToSetup as apiBackToSetup,
+  pauseSession as apiPauseSession,
+  resumeSession as apiResumeSession,
+  undoTurn as apiUndoTurn,
+  interruptTurn as apiInterruptTurn,
+  pinElement as apiPinElement,
+  clearPins as apiClearPins,
+  answerQuestion as apiAnswerQuestion,
+  sendNudge as apiSendNudge,
+  sendScopedEdit as apiSendScopedEdit,
+  sendTypedTurn as apiSendTypedTurn,
+  resetSession as apiResetSession,
+} from "./api-client.js";
 
 // v0.5.0: Mermaid integration. Loaded lazily on first render_mermaid call so
 // the ~200KB Mermaid bundle doesn't slow first paint. The import promise is
@@ -436,11 +453,7 @@ function App() {
   // snapshot taken just before runAgent and restores state.elements.
   async function handleUndoTurn() {
     try {
-      const res = await fetch("/api/preso/undo-turn", { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Undo failed.");
-      }
+      await apiUndoTurn();
     } catch (e) {
       setError(e.message || "Undo failed.");
     }
@@ -448,11 +461,7 @@ function App() {
 
   async function handleInterrupt() {
     try {
-      const res = await fetch("/api/preso/interrupt", { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Interrupt failed.");
-      }
+      await apiInterruptTurn();
     } catch (e) {
       setError(e.message || "Interrupt failed.");
     }
@@ -472,11 +481,7 @@ function App() {
     }
     try {
       for (const id of ids) {
-        await fetch("/api/preso/pin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id }),
-        });
+        await apiPinElement(id);
       }
     } catch (e) {
       setError(e.message || "Pin failed.");
@@ -485,7 +490,7 @@ function App() {
 
   async function clearAllPins() {
     try {
-      await fetch("/api/preso/pins/clear", { method: "POST" });
+      await apiClearPins();
     } catch (e) {
       setError(e.message || "Clear pins failed.");
     }
@@ -507,16 +512,7 @@ function App() {
     }
     setScopedEditSending(true);
     try {
-      const res = await fetch("/api/preso/scoped-edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selectedIds, instruction: text }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Scoped edit failed.");
-        return;
-      }
+      await apiSendScopedEdit({ selectedIds, instruction: text });
       setScopedEditText("");
     } catch (e) {
       setError(e.message || "Scoped edit failed.");
@@ -532,16 +528,7 @@ function App() {
     if (!trimmed) return;
     setSaySending(true);
     try {
-      const res = await fetch("/api/preso/say", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Could not add that to the board.");
-        return;
-      }
+      await apiSendTypedTurn(trimmed);
       setSayText("");
     } catch (e) {
       setError(e.message || "Could not add that to the board.");
@@ -673,14 +660,9 @@ function App() {
     const next = !capturePaused;
     setCapturePaused(next); // optimistic
     try {
-      const res = await fetch(`/api/preso/${next ? "pause" : "resume"}`, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setCapturePaused(!next); // rollback
-        setError(body.error || "Failed to toggle capture pause.");
-      }
+      await (next ? apiPauseSession() : apiResumeSession());
     } catch (e) {
-      setCapturePaused(!next);
+      setCapturePaused(!next); // rollback
       setError(e.message || "Failed to toggle capture pause.");
     }
   }
@@ -690,16 +672,7 @@ function App() {
     const trimmed = String(text ?? "").trim();
     if (!trimmed) return;
     try {
-      const res = await fetch("/api/preso/answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: pendingQuestion.id, text: trimmed }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Failed to send answer.");
-        return;
-      }
+      await apiAnswerQuestion({ id: pendingQuestion.id, text: trimmed });
       setPendingQuestion(null);
     } catch (e) {
       setError(e.message || "Failed to send answer.");
@@ -1024,8 +997,7 @@ function App() {
   }, [api]);
 
   React.useEffect(() => {
-    fetch("/api/config")
-      .then((res) => res.json())
+    apiGetConfig()
       .then((config) => {
         setTranscriptionEngine(config.transcriptionEngine);
         if (config.settings) setSettings(config.settings);
@@ -1035,13 +1007,7 @@ function App() {
 
   async function saveSettings(patch) {
     setError("");
-    const res = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || "Failed to save settings");
+    const body = await apiSaveSettings(patch);
     setSettings(body.settings);
     setTranscriptionEngine(body.transcriptionEngine);
     setSttError(false);
@@ -1165,18 +1131,10 @@ function App() {
         );
       }
 
-      const res = await fetch("/api/preso/start", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          stagingElements: stagingSkeleton,
-          stagingScreenshot,
-        }),
+      await apiStartSession({
+        stagingElements: stagingSkeleton,
+        stagingScreenshot,
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Start preso failed (${res.status})`);
-      }
       // Server broadcasts mode=live and whiteboard:update; the WS handler swaps the canvas.
     } catch (err) {
       setError(err.message);
@@ -1189,8 +1147,7 @@ function App() {
     setError("");
     if (listening) await stopListening();
     try {
-      const res = await fetch("/api/preso/back-to-staging", { method: "POST" });
-      if (!res.ok) throw new Error(`Back to staging failed (${res.status})`);
+      await apiBackToSetup();
       // Server broadcasts mode=staging; the WS handler restores the staged scene.
     } catch (err) {
       setError(err.message);
@@ -1228,8 +1185,7 @@ function App() {
         clearTimeout(captionTimerRef.current);
         setCaptionText("");
         setTranscriptHistory([]);
-        const res = await fetch("/api/session/reset", { method: "POST" });
-        if (!res.ok) throw new Error(`Reset failed (${res.status})`);
+        await apiResetSession();
       }
     } catch (err) {
       setError(err.message);
@@ -3281,15 +3237,7 @@ function NudgeBar() {
     setSending(true);
     setErrorText("");
     try {
-      const res = await fetch("/api/preso/nudge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${res.status}`);
-      }
+      await apiSendNudge(text);
       setValue("");
       setRecent((prev) => [text, ...prev.filter((t) => t !== text)].slice(0, 3));
       setConfirm(true);
@@ -3585,15 +3533,7 @@ function QuickActions() {
     setBusy(action.label);
     setFlash("");
     try {
-      const res = await fetch("/api/preso/nudge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: action.text }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${res.status}`);
-      }
+      await apiSendNudge(action.text);
       setFlash(`Sent: ${action.label}`);
       setTimeout(() => setFlash(""), 1800);
     } catch (e) {

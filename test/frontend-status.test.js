@@ -53,7 +53,7 @@ test("frontend flushes pending agent instructions before starting preso", () => 
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
 
   assert.match(appSource, /async function flushAgentInstructionsSave\(\)/);
-  assert.match(appSource, /async function startPreso\(\)[\s\S]*await flushAgentInstructionsSave\(\)[\s\S]*fetch\("\/api\/preso\/start"/);
+  assert.match(appSource, /async function startPreso\(\)[\s\S]*await flushAgentInstructionsSave\(\)[\s\S]*apiStartSession\(/);
 });
 
 test("frontend handles viewport commands from the agent", () => {
