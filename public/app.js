@@ -203,7 +203,6 @@ function App() {
     captionMode: "presentation",
     questionPos: "top",
     paletteRow: true,
-    activePalette: "champions",
     toggleBreathe: true,
     onboarding: true,
     panelTheme: "dark",

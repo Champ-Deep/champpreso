@@ -78,11 +78,17 @@ const AGENT_KEY_PLACEHOLDER = {
   cerebras: "csk-...",
 };
 
+// Must match the keys computeWorldStyle() (public/app.js) actually maps to
+// --p/--s/--g/--t accent tokens - these are the only hex values it knows how
+// to turn into a real color scheme. Picking any other hex here would
+// silently fall back to Champ Ember with no visible effect, which is exactly
+// the bug this list used to have (its old "cool/warm/mono" hexes matched
+// nothing computeWorldStyle recognized).
 const PALETTE_SWATCHES = [
-  { name: "Champions", key: "champions", hex: "#FF6B35" },
-  { name: "Cool", key: "cool", hex: "#3B82F6" },
-  { name: "Warm", key: "warm", hex: "#F59E0B" },
-  { name: "Mono", key: "mono", hex: "#6B7280" },
+  { name: "Champ Ember", key: "#FF6B35", hex: "#FF6B35" },
+  { name: "Champions Group", key: "#F26722", hex: "#F26722" },
+  { name: "Cyan", key: "#06B6D4", hex: "#06B6D4" },
+  { name: "Violet", key: "#7C5CFF", hex: "#7C5CFF" },
 ];
 
 function agentModelsFor(provider) {
@@ -365,25 +371,32 @@ export function SetupScreen({
       ),
 
       h(
-        "button",
-        {
-          type: "button",
-          className: "setup-ghost-btn",
-          onClick: restoreSession,
-          disabled: restoring,
-        },
-        restoreIcon(),
-        restoring ? "Restoring…" : "Restore last session",
+        "div",
+        { className: "setup-restore-group" },
+        h(
+          "button",
+          {
+            type: "button",
+            className: "setup-ghost-btn",
+            onClick: restoreSession,
+            disabled: restoring,
+          },
+          restoreIcon(),
+          restoring ? "Restoring…" : "Restore last session",
+        ),
+        // Always rendered (space reserved via CSS min-height even when
+        // empty) rather than only mounted once there's text - a
+        // conditionally-mounted sibling here pushed the Settings button
+        // (and everything after it) down every time a restore result
+        // appeared, which read as the whole rail "glitching" on restore.
+        h(
+          "div",
+          {
+            className: `setup-restored${restoredText ? " visible" : ""}${/failed|no saved/i.test(restoredText) ? " err" : ""}`,
+          },
+          restoredText,
+        ),
       ),
-      restoredText
-        ? h(
-            "div",
-            {
-              className: `setup-restored${/failed|no saved/i.test(restoredText) ? " err" : ""}`,
-            },
-            restoredText,
-          )
-        : null,
 
       h(
         "button",
@@ -393,7 +406,12 @@ export function SetupScreen({
           onClick: () => setSettingsOpen(true),
         },
         settingsIcon(),
-        "Settings · agent, transcription, mic",
+        h(
+          "span",
+          { className: "setup-ghost-btn-text" },
+          h("span", { className: "setup-ghost-btn-title" }, "Settings"),
+          h("span", { className: "setup-ghost-btn-sub" }, "Agent, transcription, mic"),
+        ),
       ),
 
       h("div", { className: "setup-spacer" }),
@@ -771,11 +789,11 @@ function SettingsSheet({
                 h("button", {
                   key: p.key,
                   type: "button",
-                  className: `ss-swatch${(uiPrefs?.activePalette ?? "champions") === p.key ? " active" : ""}`,
+                  className: `ss-swatch${(uiPrefs?.themePrimary ?? "#FF6B35") === p.key ? " active" : ""}`,
                   style: { background: p.hex },
                   title: p.name,
                   "aria-label": p.name,
-                  onClick: () => onPatchUiPref("activePalette", p.key),
+                  onClick: () => onPatchUiPref("themePrimary", p.hex),
                 }),
               ),
             ),
@@ -802,6 +820,66 @@ function MicSection({ mic, onMicChange }) {
   const [devices, setDevices] = React.useState([]);
   const [needsPermission, setNeedsPermission] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  // Real mic level (0-1), driven by an AnalyserNode - not a CSS animation
+  // that plays whether or not anyone is speaking or even has a mic granted.
+  const [level, setLevel] = React.useState(0);
+  const [meterError, setMeterError] = React.useState(false);
+
+  // Live-meters the selected device while this section is mounted and
+  // permission is already granted. Opens its own short-lived stream (not
+  // the full mic-capture.js resample/encode pipeline - this only needs
+  // amplitude) and tears it down on unmount or device/permission change.
+  React.useEffect(() => {
+    if (needsPermission) {
+      setLevel(0);
+      return;
+    }
+    let cancelled = false;
+    let stream;
+    let context;
+    let rafId;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: mic?.deviceId ? { deviceId: { exact: mic.deviceId } } : true,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        context = new AudioContext();
+        const source = context.createMediaStreamSource(stream);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.6;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        const tick = () => {
+          analyser.getByteTimeDomainData(data);
+          let sumSquares = 0;
+          for (let i = 0; i < data.length; i += 1) {
+            const centered = (data[i] - 128) / 128;
+            sumSquares += centered * centered;
+          }
+          const rms = Math.sqrt(sumSquares / data.length);
+          // RMS speech is quiet (~0.02-0.15); scale so a normal speaking
+          // voice visibly moves the bars instead of barely registering.
+          setLevel(Math.min(1, rms * 6));
+          rafId = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch {
+        if (!cancelled) setMeterError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      stream?.getTracks().forEach((t) => t.stop());
+      context?.close().catch(() => {});
+      setLevel(0);
+    };
+  }, [needsPermission, mic?.deviceId]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -879,14 +957,25 @@ function MicSection({ mic, onMicChange }) {
       h(
         "div",
         { className: "ss-mic-bars", "aria-hidden": "true" },
-        h("span", { className: "b1" }),
-        h("span", { className: "b2" }),
-        h("span", { className: "b3" }),
-        h("span", { className: "b1" }),
-        h("span", { className: "b2" }),
-        h("span", { className: "b3" }),
+        // Heights driven by the real analyser reading (level, 0-1) - each
+        // bar gets a slightly different multiplier so it reads as a level
+        // meter rather than three identical blocks moving in lockstep.
+        [1, 0.7, 1.3].map((mult, i) =>
+          h("span", {
+            key: i,
+            style: { height: `${4 + Math.min(1, level * mult) * 12}px` },
+          }),
+        ),
       ),
-      h("span", { className: "ss-mic-hint" }, "Speak. The bars should move."),
+      h(
+        "span",
+        { className: "ss-mic-hint" },
+        needsPermission
+          ? "Grant access above, then speak — bars react to your mic."
+          : meterError
+            ? "Couldn't read this device's level."
+            : "Speak. The bars react to real input.",
+      ),
     ),
   );
 }

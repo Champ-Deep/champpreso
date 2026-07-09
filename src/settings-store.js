@@ -61,9 +61,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     captionMode: "presentation", // "presentation" | "working"
     // Floating Question Card anchor edge.
     questionPos: "top", // "top" | "bottom"
-    // Canvas palette swatch row on/off + which palette is active.
+    // Canvas palette swatch row on/off. The active palette itself is just
+    // themePrimary (above) - one accent color field, not a separate one.
     paletteRow: true,
-    activePalette: "champions", // "champions" | "cool" | "warm" | "mono"
     // Mode toggle breathing underline micro-interaction.
     toggleBreathe: true,
     // First-launch onboarding ribbon. User dismisses; persists as false.
