@@ -32,6 +32,29 @@ import {
 
 const h = React.createElement;
 
+// Example session intents covering a few common brainstorm shapes, shown as
+// tap-to-fill chips under the intent textarea so a first-time user has a
+// concrete sense of what a good intent looks like (goal vs. question,
+// specific enough to steer the canvas) instead of a blank field.
+const INTENT_TEMPLATES = [
+  {
+    label: "Decide something",
+    text: "Map every option for this decision — the tradeoffs, who's affected, and what we still don't know.",
+  },
+  {
+    label: "Plan a project",
+    text: "Get to a concrete plan: phases, owners, dates, and what could block us.",
+  },
+  {
+    label: "Map a problem",
+    text: "Map the problem space — what we know, what we don't, and where people disagree.",
+  },
+  {
+    label: "Run a retro",
+    text: "Capture what went well, what didn't, and what we're changing next.",
+  },
+];
+
 const AGENT_PROVIDERS = [
   { value: "groq", label: "Groq · fast, free tier" },
   { value: "cerebras", label: "Cerebras · fastest" },
@@ -300,6 +323,33 @@ export function SetupScreen({
           "div",
           { className: "setup-intent-hint" },
           "The intent steers what gets drawn. A goal converges the canvas. A question maps it.",
+        ),
+        h(
+          "div",
+          { className: "setup-intent-templates" },
+          INTENT_TEMPLATES.map((template) =>
+            h(
+              "button",
+              {
+                key: template.label,
+                type: "button",
+                className: "setup-intent-template",
+                onClick: () => onAgentInstructionsChange?.(template.text),
+              },
+              template.label,
+            ),
+          ),
+          agentInstructions
+            ? h(
+                "button",
+                {
+                  type: "button",
+                  className: "setup-intent-template setup-intent-template-clear",
+                  onClick: () => onAgentInstructionsChange?.(""),
+                },
+                "Clear",
+              )
+            : null,
         ),
       ),
 

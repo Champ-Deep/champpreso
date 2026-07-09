@@ -1411,6 +1411,34 @@ button:disabled {
   color: var(--champ-mist);
   line-height: 1.5;
 }
+.setup-intent-templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.setup-intent-template {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  padding: 4px 10px;
+  color: var(--champ-cloud);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.setup-intent-template:hover {
+  border-color: var(--champ-ember);
+  color: var(--champ-snow);
+}
+.setup-intent-template-clear {
+  color: var(--champ-mist);
+  border-style: dashed;
+  margin-left: auto;
+}
+.setup-intent-template-clear:hover {
+  border-color: var(--champ-crimson);
+  color: var(--champ-crimson);
+}
 .setup-check {
   display: flex;
   align-items: center;
