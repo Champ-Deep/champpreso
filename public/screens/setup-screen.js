@@ -13,12 +13,17 @@
 // app stays the single source of truth for settings, appearance and the WS.
 
 import React from "react";
+import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 
 import {
   seedCanvas as apiSeedCanvas,
   getLastBackup as apiGetLastBackup,
   restoreBackup as apiRestoreBackup,
 } from "../api-client.js";
+import {
+  BRAINSTORM_TEMPLATES,
+  isTemplateElementId,
+} from "../brainstorm-templates.js";
 import {
   OPENAI_AGENT_MODELS,
   CODEX_AGENT_MODELS,
@@ -31,29 +36,6 @@ import {
 } from "../model-catalog.js";
 
 const h = React.createElement;
-
-// Example session intents covering a few common brainstorm shapes, shown as
-// tap-to-fill chips under the intent textarea so a first-time user has a
-// concrete sense of what a good intent looks like (goal vs. question,
-// specific enough to steer the canvas) instead of a blank field.
-const INTENT_TEMPLATES = [
-  {
-    label: "Decide something",
-    text: "Map every option for this decision — the tradeoffs, who's affected, and what we still don't know.",
-  },
-  {
-    label: "Plan a project",
-    text: "Get to a concrete plan: phases, owners, dates, and what could block us.",
-  },
-  {
-    label: "Map a problem",
-    text: "Map the problem space — what we know, what we don't, and where people disagree.",
-  },
-  {
-    label: "Run a retro",
-    text: "Capture what went well, what didn't, and what we're changing next.",
-  },
-];
 
 const AGENT_PROVIDERS = [
   { value: "groq", label: "Groq · fast, free tier" },
@@ -285,6 +267,53 @@ export function SetupScreen({
     await onStarted?.();
   }
 
+  // Applies a brainstorm template: fills the intent and lays a zone skeleton
+  // on the (client-owned, staging-mode) canvas. Elements from a previously
+  // selected template are removed first - identified by their tpl- id prefix -
+  // so switching templates swaps skeletons without touching anything the user
+  // drew themselves.
+  const [activeTemplateId, setActiveTemplateId] = React.useState("");
+
+  function applyTemplate(template) {
+    onAgentInstructionsChange?.(template.intent);
+    setActiveTemplateId(template.id);
+    const api = excalidrawApi;
+    if (!api) return;
+    const kept = (api.getSceneElements?.() ?? []).filter(
+      (el) => !isTemplateElementId(el.id),
+    );
+    const skeleton = convertToExcalidrawElements(template.elements, {
+      regenerateIds: false,
+    });
+    api.updateScene({ elements: [...kept, ...skeleton] });
+    try {
+      api.scrollToContent?.(skeleton, { fitToViewport: true, viewportZoomFactor: 0.75 });
+      // scrollToContent centers on the full window, but the setup rail covers
+      // the left ~284px - shift the content right by half the rail so it
+      // centers within the visible canvas area instead (same correction the
+      // .setup-canvas-hint CSS makes). Deferred so the fit commits first.
+      setTimeout(() => {
+        const appState = api.getAppState?.();
+        if (!appState) return;
+        const zoom = appState.zoom?.value ?? 1;
+        api.updateScene({ appState: { scrollX: appState.scrollX + 142 / zoom } });
+      }, 60);
+    } catch {
+      /* older Excalidraw builds without scrollToContent options: non-fatal */
+    }
+  }
+
+  function clearTemplate() {
+    onAgentInstructionsChange?.("");
+    setActiveTemplateId("");
+    const api = excalidrawApi;
+    if (!api) return;
+    const kept = (api.getSceneElements?.() ?? []).filter(
+      (el) => !isTemplateElementId(el.id),
+    );
+    api.updateScene({ elements: kept });
+  }
+
   return h(
     React.Fragment,
     null,
@@ -332,26 +361,32 @@ export function SetupScreen({
         ),
         h(
           "div",
+          { className: "setup-templates-label" },
+          "OR START FROM A TEMPLATE",
+        ),
+        h(
+          "div",
           { className: "setup-intent-templates" },
-          INTENT_TEMPLATES.map((template) =>
+          BRAINSTORM_TEMPLATES.map((template) =>
             h(
               "button",
               {
-                key: template.label,
+                key: template.id,
                 type: "button",
-                className: "setup-intent-template",
-                onClick: () => onAgentInstructionsChange?.(template.text),
+                className: `setup-intent-template${activeTemplateId === template.id ? " active" : ""}`,
+                title: template.tagline,
+                onClick: () => applyTemplate(template),
               },
               template.label,
             ),
           ),
-          agentInstructions
+          agentInstructions || activeTemplateId
             ? h(
                 "button",
                 {
                   type: "button",
                   className: "setup-intent-template setup-intent-template-clear",
-                  onClick: () => onAgentInstructionsChange?.(""),
+                  onClick: clearTemplate,
                 },
                 "Clear",
               )

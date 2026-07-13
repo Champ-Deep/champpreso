@@ -1430,6 +1430,19 @@ button:disabled {
   border-color: var(--champ-ember);
   color: var(--champ-snow);
 }
+.setup-intent-template.active {
+  border-color: var(--champ-ember);
+  background: rgba(255, 107, 53, 0.14);
+  color: var(--champ-snow);
+}
+/* "OR START FROM A TEMPLATE" eyebrow between the intent field and the chips */
+.setup-templates-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--champ-mist);
+  margin-top: 2px;
+}
 .setup-intent-template-clear {
   color: var(--champ-mist);
   border-style: dashed;
