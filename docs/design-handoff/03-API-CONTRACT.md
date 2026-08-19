@@ -27,6 +27,12 @@ Endpoint names still say "preso"; a rename to session-language is planned (see `
 | `/api/session/current-canvas` | GET | In-memory canvas state (v0.17) |
 | `/api/session/last-backup` | GET | Last disk snapshot, 404 if none (v0.17) |
 | `/api/session/restore-backup` | POST | Load disk snapshot onto canvas + broadcast (v0.17) |
+| `/api/session/seed` | POST `{text, existingElements?}` | One-shot layout turn from pasted text. 409 while live |
+| `/api/session/review` | POST | Extract `{decisions[], summary}` for the Review panel. Read-only |
+| `/api/session/ask` | POST `{question}` | **Ask the board.** Answers without drawing; also broadcasts `agent:answer`. 409 before live |
+| `/api/session/ask/clear` | POST | Drop the ask thread's follow-up context, session continues |
+| `/api/models` | GET `?provider=` | Live model list for a provider. Always 200; `source` reports `live\|cache\|stale-cache\|fallback\|static` |
+| `/api/models/verify` | GET `?provider=&model=` | Is this model still real? `known: true\|false\|null` — **null means we could not check, do not render it as a problem** |
 
 ## WebSocket messages, server → client
 
@@ -34,12 +40,13 @@ Endpoint names still say "preso"; a rename to session-language is planned (see `
 |---|---|---|
 | `whiteboard:update` | `elements` | Reflect into Excalidraw |
 | `whiteboard:viewport` | viewport hint | Camera moves |
-| `mode` | `mode: "staging"\|"live"` | Lifecycle state |
+| `mode` | `mode: "staging"\|"live"`, `lifecycleMode: "setup"\|"listening"` | Lifecycle state |
 | `warmup` | warmup state | Ambient readiness glyph |
 | `warmup:error` | error | Readiness problem indicator |
 | `agent:status` | status string | Status strip activity |
 | `agent:turn-start` / `turn-end` / `turn-error` | `turnId, transcript, timestamp` | Activity pulse, error toast |
-| `agent:question` / `question-resolved` | question w/ options | Question card |
+| `agent:question` / `question-resolved` | question w/ options | Question card (agent → user) |
+| `agent:answer` | `{question, answer, sources[], model, timestamp}` | Ask panel answer card. **Broadcast to every client**, not just the asker |
 | `agent:interrupted` | reason | Confirm interrupt |
 | `agent:undone` | id | Confirm undo |
 | `agent:zone` | zone | Zone chip (sketches / structured / notes) |
