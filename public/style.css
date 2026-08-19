@@ -1732,6 +1732,23 @@ button:disabled {
   border-color: var(--champ-ember);
   box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
 }
+/* Free-text settings field. Same shell as .ss-select so the two line up in
+   the sheet's two-column field grid. */
+.ss-input {
+  height: 34px;
+  background: var(--champ-ink);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--champ-snow);
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+  width: 100%;
+}
+.ss-input:focus {
+  border-color: var(--champ-ember);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
+}
 .ss-help {
   font-size: 11.5px;
   color: var(--champ-mist);
@@ -1766,11 +1783,18 @@ button:disabled {
   background: var(--champ-slate);
   color: var(--champ-snow);
 }
+.ss-seg-label {
+  display: block;
+  white-space: nowrap;
+}
 .ss-seg-sub {
   display: block;
   font-size: 10.5px;
   font-weight: 400;
   opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ss-seg-compact { display: inline-flex; }
 .ss-seg-btn-compact {
@@ -2442,6 +2466,216 @@ button:disabled {
 }
 .ls-typed-send:hover:not(:disabled) { background: var(--champ-ember-glow); }
 .ls-typed-send:disabled { background: #2A2F3D; cursor: default; opacity: 0.7; }
+
+/* ================= ASK THE BOARD =================
+   The question surface. Shares the steer bar's blur/radius/shadow language so
+   it reads as part of the same control cluster, but leans cyan rather than
+   ember: steering and typing change the board, asking does not. */
+.ls-ask-toggle {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--champ-mist);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.ls-ask-toggle:hover { color: var(--champ-snow); background: rgba(255, 255, 255, 0.06); }
+.ls-ask-toggle.active { color: #22D3EE; background: rgba(34, 211, 238, 0.12); }
+
+.ask-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ask-panel-review {
+  margin-bottom: 4px;
+}
+
+.ask-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(11, 13, 18, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 10px;
+  padding: 6px 8px 6px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  animation: ppFadeUp 0.2s both;
+}
+.ask-panel-review .ask-row {
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.ask-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #22D3EE;
+  flex: none;
+}
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--champ-snow);
+  font-size: 13px;
+}
+.ask-input:disabled { opacity: 0.6; }
+.ask-send {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: none;
+  border-radius: 7px;
+  background: #0891B2;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, opacity 0.12s;
+}
+.ask-send:hover:not(:disabled) { background: #22D3EE; }
+.ask-send:disabled { background: #2A2F3D; cursor: default; opacity: 0.7; }
+.ask-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: rvSpin 0.7s linear infinite;
+}
+
+/* ---- the answer card ---- */
+.ask-answer {
+  width: 100%;
+  background: rgba(11, 13, 18, 0.96);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  border-radius: 10px;
+  padding: 10px 12px 8px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.4);
+  animation: ppFadeUp 0.2s both;
+  text-align: left;
+}
+.ask-panel-review .ask-answer {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.ask-answer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ask-answer-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #22D3EE;
+}
+.ask-answer-model {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--champ-mist);
+  opacity: 0.8;
+}
+.ask-answer-spacer { flex: 1; }
+.ask-answer-close {
+  background: transparent;
+  border: none;
+  color: var(--champ-mist);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 5px;
+  display: flex;
+  transition: color 0.12s, background 0.12s;
+}
+.ask-answer-close:hover { color: var(--champ-snow); background: rgba(255, 255, 255, 0.08); }
+.ask-answer-q {
+  font-size: 11px;
+  color: var(--champ-mist);
+  margin-bottom: 5px;
+  font-style: italic;
+}
+.ask-answer-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--champ-snow);
+  white-space: pre-wrap;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.ask-answer-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ask-answer-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 210px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--champ-mist);
+  font-size: 10px;
+  text-decoration: none;
+  transition: color 0.12s, border-color 0.12s;
+}
+.ask-answer-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ask-answer-source:hover { color: var(--champ-snow); border-color: rgba(34, 211, 238, 0.4); }
+.ask-answer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ask-answer-action {
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: var(--champ-mist);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.ask-answer-action:hover {
+  color: var(--champ-snow);
+  border-color: var(--champ-ember);
+  background: rgba(255, 107, 53, 0.1);
+}
+.ask-error {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #FCA5A5;
+  font-size: 11px;
+  text-align: left;
+}
 
 /* ---- floating error pill (live) ---- */
 .ls-error {

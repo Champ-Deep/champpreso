@@ -112,6 +112,33 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
   };
 }
 
+// The ASK agent's provider. Deliberately separate from the drawing agent: the
+// drawing agent wants the fastest silicon it can get, while a question about
+// the board wants the most capable model available. Falls back to the drawing
+// agent's provider when settings.ask isn't configured.
+export function resolveAskProviderFromSettings({ settings, env = process.env }) {
+  const ask = settings?.ask ?? {};
+  const provider = (ask.provider ?? "").trim();
+  if (!provider) return resolveAgentProviderFromSettings({ settings, env });
+
+  // Reuse the main resolver by presenting it a settings object whose agent
+  // block is the ask block, so key lookup, base URLs, and every provider's
+  // error message stay identical across both paths.
+  const model = (ask.model ?? "").trim();
+  const shimmed = {
+    ...settings,
+    agent: {
+      ...settings.agent,
+      provider,
+      [provider]: {
+        ...(settings.agent?.[provider] ?? {}),
+        ...(model ? { model } : {}),
+      },
+    },
+  };
+  return resolveAgentProviderFromSettings({ settings: shimmed, env });
+}
+
 function validateReasoningEffort(reasoningEffort) {
   const value = reasoningEffort || DEFAULT_OPENAI_REASONING_EFFORT;
   if (!OPENAI_REASONING_EFFORTS.has(value)) {

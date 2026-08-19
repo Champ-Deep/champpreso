@@ -48,3 +48,21 @@ export const OPENAI_TRANSCRIPTION_MODELS = [
   "whisper-1",
 ];
 export const MOONSHINE_MODELS = ["tiny", "small", "medium"];
+// Groq Whisper on LPU silicon. Large v3 Turbo is the default: near-Large-v3
+// accuracy at a fraction of the latency, and covered by the free daily tier.
+export const GROQ_TRANSCRIPTION_MODELS = [
+  "whisper-large-v3-turbo",
+  "whisper-large-v3",
+  "distil-whisper-large-v3-en",
+];
+// Models worth escalating a question to. The ask agent answers questions
+// about the board rather than drawing it, so reasoning quality matters more
+// than tokens per second. Free text is accepted too - any OpenRouter slug works.
+export const ASK_MODELS = [
+  "anthropic/claude-sonnet-5",
+  "anthropic/claude-opus-5",
+  "openai/gpt-5.6-terra",
+  "google/gemini-3.7-flash",
+  "deepseek/deepseek-v4-pro",
+  "x-ai/grok-4.6",
+];

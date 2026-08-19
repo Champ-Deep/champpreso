@@ -113,6 +113,19 @@ export function seedCanvas({ text, existingElements }) {
   return request("/api/session/seed", { method: "POST", body: { text, existingElements } });
 }
 
+// Ask the agent a question about the board. Read-only: nothing is drawn.
+// The answer also arrives over the WebSocket as `agent:answer`, so every
+// client in the room sees it - this return value is just for the asker's
+// own optimistic render.
+export function askAgent(question) {
+  return request("/api/session/ask", { method: "POST", body: { question } });
+}
+
+// Drop the ask thread's follow-up context without ending the session.
+export function clearAskThread() {
+  return request("/api/session/ask/clear", { method: "POST" });
+}
+
 export function reviewSession() {
   return request("/api/session/review", { method: "POST" });
 }

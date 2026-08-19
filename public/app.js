@@ -21,6 +21,7 @@ import {
   answerQuestion as apiAnswerQuestion,
   sendScopedEdit as apiSendScopedEdit,
   sendTypedTurn as apiSendTypedTurn,
+  askAgent as apiAskAgent,
   resetSession as apiResetSession,
 } from "./api-client.js";
 import { createWsClient } from "./ws-client.js";
@@ -151,6 +152,14 @@ function App() {
   // v0.15.0: typed turn ("type a point to add to the board").
   const [sayText, setSayText] = React.useState("");
   const [saySending, setSaySending] = React.useState(false);
+  // ---- ask the board ----
+  // The answer lands here from the WebSocket rather than from the fetch
+  // response, so every client in the room renders it - a shared whiteboard
+  // shouldn't give a private answer to whoever happened to type the question.
+  const [askText, setAskText] = React.useState("");
+  const [askBusy, setAskBusy] = React.useState(false);
+  const [askAnswer, setAskAnswer] = React.useState(null);
+  const [askError, setAskError] = React.useState("");
   const [error, setError] = React.useState("");
   const [micError, setMicError] = React.useState(false);
   const [agentError, setAgentError] = React.useState(false);
@@ -526,6 +535,24 @@ function App() {
       setError(e.message || "Could not add that to the board.");
     } finally {
       setSaySending(false);
+    }
+  }
+
+  // Ask a question about the board. Read-only: the agent answers, it does not
+  // draw. The answer arrives over the WS as `agent:answer` (see the handler
+  // below), which is what actually populates askAnswer.
+  async function askBoard(question) {
+    const trimmed = String(question ?? "").trim();
+    if (!trimmed || askBusy) return;
+    setAskBusy(true);
+    setAskError("");
+    try {
+      await apiAskAgent(trimmed);
+      setAskText("");
+    } catch (e) {
+      setAskError(e.message || "Couldn't answer that.");
+    } finally {
+      setAskBusy(false);
     }
   }
 
@@ -920,6 +947,15 @@ function App() {
             options: Array.isArray(message.options) ? message.options : [],
             askedAt: message.askedAt,
           });
+        }
+        if (message.type === "agent:answer") {
+          setAskAnswer({
+            question: message.question,
+            answer: message.answer,
+            sources: Array.isArray(message.sources) ? message.sources : [],
+            model: message.model,
+          });
+          setAskError("");
         }
         if (message.type === "agent:question-resolved") {
           setPendingQuestion((cur) => (cur && cur.id === message.id ? null : cur));
@@ -1368,6 +1404,20 @@ function App() {
             saySending,
             onSayTextChange: setSayText,
             onSendTypedTurn: sendTypedTurn,
+            askValue: askText,
+            askBusy,
+            askAnswer,
+            askError,
+            onAskValueChange: setAskText,
+            onAsk: askBoard,
+            onDismissAnswer: () => setAskAnswer(null),
+            // "Put on board" routes the answer through the ordinary typed-turn
+            // path, so the drawing agent renders it the same way it renders
+            // anything else somebody says.
+            onPutAnswerOnBoard: (text) => {
+              sendTypedTurn(text);
+              setAskAnswer(null);
+            },
             nudgeSignal,
             error,
           })
@@ -1384,6 +1434,17 @@ function App() {
             sessionStartedAt: sessionStartedAtRef.current,
             onExport: exportCanvas,
             onNewSession: newSessionFromReview,
+            askValue: askText,
+            askBusy,
+            askAnswer,
+            askError,
+            onAskValueChange: setAskText,
+            onAsk: askBoard,
+            onDismissAnswer: () => setAskAnswer(null),
+            onPutAnswerOnBoard: (text) => {
+              sendTypedTurn(text);
+              setAskAnswer(null);
+            },
           })
         : null,
       // v0.12.0: Toast stack. Bottom-right of the canvas.

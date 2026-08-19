@@ -27,6 +27,7 @@
 import React from "react";
 
 import { reviewSession as apiReviewSession } from "../api-client.js";
+import { AskPanel } from "./ask-panel.js";
 
 const h = React.createElement;
 
@@ -97,6 +98,15 @@ export function ReviewScreen({
   sessionStartedAt = null,
   onExport,
   onNewSession,
+  // ---- ask the board (same panel the Listening screen uses) ----
+  askValue = "",
+  askBusy = false,
+  askAnswer = null,
+  askError = "",
+  onAskValueChange,
+  onAsk,
+  onDismissAnswer,
+  onPutAnswerOnBoard,
 }) {
   // ---- one-shot POST /api/session/review on mount ----
   const [status, setStatus] = React.useState("loading"); // loading|ready|error
@@ -244,6 +254,22 @@ export function ReviewScreen({
             ),
           )
         : null,
+
+      // --- ask the board ---
+      // Always expanded here. On the review screen, interrogating the board is
+      // the primary action, not a secondary one hidden behind a toggle.
+      h(AskPanel, {
+        open: true,
+        value: askValue,
+        onValueChange: onAskValueChange,
+        onSubmit: onAsk,
+        busy: askBusy,
+        answer: askAnswer,
+        error: askError,
+        onDismiss: onDismissAnswer,
+        onPutOnBoard: onPutAnswerOnBoard,
+        placement: "review",
+      }),
 
       // --- export / copy row ---
       h(

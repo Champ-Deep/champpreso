@@ -46,6 +46,8 @@
 
 import React from "react";
 
+import { AskPanel, askIcon } from "./ask-panel.js";
+
 import { sendNudge as apiSendNudge } from "../api-client.js";
 
 const h = React.createElement;
@@ -161,6 +163,15 @@ export function ListeningScreen({
   onSayTextChange,
   onSendTypedTurn,
   nudgeSignal = null,
+  // ---- ask the board ----
+  askValue = "",
+  askBusy = false,
+  askAnswer = null,
+  askError = "",
+  onAskValueChange,
+  onAsk,
+  onDismissAnswer,
+  onPutAnswerOnBoard,
   error = "",
 }) {
   const isListening = listening && !paused;
@@ -200,6 +211,14 @@ export function ListeningScreen({
   const [steerEcho, setSteerEcho] = React.useState("");
   const steerInputRef = React.useRef(null);
   const steerAppliedTimerRef = React.useRef(null);
+
+  // ---- ask the board: a question that gets answered, not drawn ----
+  const [askOpen, setAskOpen] = React.useState(false);
+  // An answer arriving over the WS (from anyone in the room) opens the panel,
+  // so the whole room sees the response without anyone having to hunt for it.
+  React.useEffect(() => {
+    if (askAnswer) setAskOpen(true);
+  }, [askAnswer]);
 
   // ---- typed turn (say): a no-voice path to speak a point into the canvas ----
   const [typedOpen, setTypedOpen] = React.useState(false);
@@ -515,6 +534,21 @@ export function ListeningScreen({
             ),
           )
         : null,
+      // Ask panel — questions about the board, answered in place. Rendered
+      // above the typed row so an answer sits closest to the conversation.
+      h(AskPanel, {
+        open: askOpen,
+        onToggle: () => setAskOpen((v) => !v),
+        value: askValue,
+        onValueChange: onAskValueChange,
+        onSubmit: onAsk,
+        busy: askBusy,
+        answer: askAnswer,
+        error: askError,
+        onDismiss: onDismissAnswer,
+        onPutOnBoard: onPutAnswerOnBoard,
+        placement: "listening",
+      }),
       // Typed-turn row — a distinct, lighter input for "type what you'd have
       // said aloud". Toggled open by the keyboard button on the steer bar.
       typedOpen
@@ -578,6 +612,20 @@ export function ListeningScreen({
             "aria-pressed": typedOpen,
           },
           keyboardIcon(),
+        ),
+        h(
+          "button",
+          {
+            type: "button",
+            className: `ls-ask-toggle${askOpen ? " active" : ""}`,
+            onClick: () => {
+              setAskOpen((v) => !v);
+            },
+            title: "Ask a question about the board (answered, not drawn)",
+            "aria-label": "Ask the board",
+            "aria-pressed": askOpen,
+          },
+          askIcon(),
         ),
         h("input", {
           ref: steerInputRef,

@@ -32,6 +32,8 @@ import {
   OPENROUTER_AGENT_MODELS,
   OPENAI_TRANSCRIPTION_MODELS,
   MOONSHINE_MODELS,
+  GROQ_TRANSCRIPTION_MODELS,
+  ASK_MODELS,
   REASONING_EFFORTS,
 } from "../model-catalog.js";
 
@@ -124,6 +126,8 @@ function currentSttModel(settings, provider) {
   const t = settings?.transcription ?? {};
   if (provider === "openai")
     return t.openai?.model || OPENAI_TRANSCRIPTION_MODELS[0];
+  if (provider === "groq")
+    return t.groq?.model || GROQ_TRANSCRIPTION_MODELS[0];
   return t.moonshine?.model || "medium";
 }
 
@@ -198,7 +202,11 @@ export function SetupScreen({
   const warming = warmupState?.state === "running";
   const micLabel = (mic?.label || "System default").toUpperCase();
   const sttReadyLabel =
-    sttProvider === "moonshine" ? "LOCAL TRANSCRIPTION" : "CLOUD TRANSCRIPTION";
+    sttProvider === "moonshine"
+      ? "LOCAL TRANSCRIPTION"
+      : sttProvider === "groq"
+        ? "GROQ LPU TRANSCRIPTION"
+        : "CLOUD TRANSCRIPTION";
   const readyText = warming
     ? `RE-WARMING · STILL FINE TO START · ${micLabel}`
     : `AGENT WARM · ${micLabel} · ${sttReadyLabel}`;
@@ -227,7 +235,12 @@ export function SetupScreen({
   }
 
   function saveSttProvider(nextProvider) {
-    const nextModel = nextProvider === "moonshine" ? "medium" : OPENAI_TRANSCRIPTION_MODELS[0];
+    const nextModel =
+      nextProvider === "moonshine"
+        ? "medium"
+        : nextProvider === "groq"
+          ? GROQ_TRANSCRIPTION_MODELS[0]
+          : OPENAI_TRANSCRIPTION_MODELS[0];
     onSaveSettings({
       transcription: { provider: nextProvider, [nextProvider]: { model: nextModel } },
     });
@@ -629,12 +642,30 @@ function SettingsSheet({
   }
 
   const agentModelOptions = agentModelsFor(agentProvider);
+  // ---- ask agent ----
+  const askModel = settings?.ask?.model || ASK_MODELS[0];
+  const askWebSearch = Boolean(settings?.ask?.webSearch);
+  // Folders are edited as one comma-separated string and committed on blur,
+  // so a half-typed path never gets saved as a folder.
+  const [kbFolders, setKbFolders] = React.useState(
+    (settings?.knowledgeBase?.folders ?? []).join(", "),
+  );
+  React.useEffect(() => {
+    setKbFolders((settings?.knowledgeBase?.folders ?? []).join(", "));
+  }, [settings?.knowledgeBase?.folders]);
+
   const sttModelOptions =
-    sttProvider === "moonshine" ? MOONSHINE_MODELS : OPENAI_TRANSCRIPTION_MODELS;
+    sttProvider === "moonshine"
+      ? MOONSHINE_MODELS
+      : sttProvider === "groq"
+        ? GROQ_TRANSCRIPTION_MODELS
+        : OPENAI_TRANSCRIPTION_MODELS;
   const sttHelp =
     sttProvider === "moonshine"
       ? "Runs on this Mac. Free. Names come out mediocre."
-      : "Cloud, low latency, nails names. Costs money per minute.";
+      : sttProvider === "groq"
+        ? "Whisper on Groq's LPU silicon. Fastest option here, and free for 14,400 minutes a day."
+        : "Cloud, low latency, nails names. Costs money per minute.";
 
   return h(
     React.Fragment,
@@ -772,8 +803,9 @@ function SettingsSheet({
           h(
             "div",
             { className: "ss-seg" },
-            sttSegButton("Local", "free · runs on this Mac", sttProvider === "moonshine", () => onSaveSttProvider("moonshine")),
-            sttSegButton("Cloud", "very accurate · paid", sttProvider === "openai", () => onSaveSttProvider("openai")),
+            sttSegButton("Local", "free", sttProvider === "moonshine", () => onSaveSttProvider("moonshine")),
+            sttSegButton("Groq LPU", "fastest", sttProvider === "groq", () => onSaveSttProvider("groq")),
+            sttSegButton("OpenAI", "accurate", sttProvider === "openai", () => onSaveSttProvider("openai")),
           ),
           ssField(
             "Model",
@@ -788,6 +820,79 @@ function SettingsSheet({
             ),
           ),
           h("div", { className: "ss-help" }, sttHelp),
+        ),
+
+        h("div", { className: "ss-divider" }),
+
+        // ---- ASK AGENT ----
+        // Deliberately its own section, not a sub-setting of AGENT. The
+        // drawing agent wants the fastest silicon available; the ask agent
+        // answers questions about the board and wants the best reasoning you
+        // can give it. Keeping them separate is the whole point.
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-group-label" }, "ASK AGENT"),
+          h(
+            "div",
+            { className: "ss-help" },
+            "Answers questions about the board without drawing on it. Hit the ? button on the steer bar during a session.",
+          ),
+          ssField(
+            "Model",
+            h(
+              "select",
+              {
+                className: "ss-select",
+                value: askModel,
+                onChange: (e) =>
+                  onSaveSettings({ ask: { provider: "openrouter", model: e.target.value } }),
+              },
+              ensureOption(ASK_MODELS, askModel).map((m) => h("option", { key: m, value: m }, m)),
+            ),
+          ),
+          ssField(
+            "Web search",
+            h(
+              "label",
+              { className: "ss-check" },
+              h("input", {
+                type: "checkbox",
+                checked: askWebSearch,
+                onChange: (e) => onSaveSettings({ ask: { webSearch: e.target.checked } }),
+              }),
+              h("span", null, askWebSearch ? "On" : "Off"),
+            ),
+          ),
+          h(
+            "div",
+            { className: "ss-help" },
+            "Web search runs through OpenRouter at roughly two cents a question. Needs an OpenRouter key.",
+          ),
+          ssField(
+            "Knowledge base",
+            h("input", {
+              type: "text",
+              className: "ss-input",
+              value: kbFolders,
+              placeholder: "~/Documents/ChampPreso-KB, ~/notes",
+              onChange: (e) => setKbFolders(e.target.value),
+              onBlur: () =>
+                onSaveSettings({
+                  knowledgeBase: {
+                    folders: kbFolders
+                      .split(",")
+                      .map((f) => f.trim())
+                      .filter(Boolean),
+                  },
+                }),
+            }),
+          ),
+          h(
+            "div",
+            { className: "ss-help" },
+            "Comma-separated folders. Markdown, text, CSV and HTML are indexed locally - nothing leaves this Mac to build the index.",
+          ),
         ),
 
         h("div", { className: "ss-divider" }),
@@ -1036,7 +1141,7 @@ function sttSegButton(label, sub, active, onClick) {
   return h(
     "button",
     { type: "button", className: `ss-seg-btn${active ? " active" : ""}`, onClick },
-    label,
+    h("span", { className: "ss-seg-label" }, label),
     h("span", { className: "ss-seg-sub" }, sub),
   );
 }

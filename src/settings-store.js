@@ -25,6 +25,30 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // because Whisper Large v3 is the SOTA Whisper variant.
     groq: { model: "whisper-large-v3-turbo", baseURL: "https://api.groq.com/openai/v1" },
   },
+  // The ASK agent: a separate, more thoughtful model that answers questions
+  // about the board instead of drawing on it. Deliberately independent of
+  // agent.* so the drawing agent can stay on fast-inference silicon (Groq /
+  // Cerebras) while questions go to a stronger reasoning model. OpenRouter is
+  // the default because it is also the only provider here that can run a web
+  // search on our behalf.
+  ask: {
+    provider: "openrouter",
+    model: "anthropic/claude-sonnet-5",
+    // Web search via OpenRouter's built-in plugin. ~$0.02 per question at the
+    // default 5 results, billed by OpenRouter, so it stays off unless wanted.
+    webSearch: false,
+    maxWebResults: 5,
+  },
+  // Reference material the ask agent can search. Folders are indexed locally
+  // (keyword search, no embeddings, no network). MCP servers reach anything
+  // else - Notion, Drive, an internal wiki. Both are optional; with neither
+  // configured the ask agent simply answers from the board and transcript.
+  knowledgeBase: {
+    folders: [],
+    // [{ name, command, args, env }] for stdio, or [{ name, url }] for HTTP.
+    mcpServers: [],
+    maxIndexChars: 2_000_000,
+  },
   apiKeys: {
     openai: "",
     openrouter: "",
@@ -44,6 +68,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // told to track and attribute distinct voices instead of assuming one
   // speaker.
   multiSpeaker: false,
+  // User-saved canvas templates: [{ id, label, intent, elements }]. Saved from
+  // the Setup screen ("save canvas as template"); elements are full Excalidraw
+  // elements re-id'd under the tpl-custom- prefix. Arrays are replaced
+  // wholesale on save (deepMerge treats arrays as leaf values), which is what
+  // add/delete both rely on.
+  customTemplates: [],
   // UI preferences. Every Aegis-spec toggle so the user can adjust the entire
   // surface without editing CSS. Persisted via PUT /api/settings, rebroadcast
   // on every save so all WS clients converge instantly.

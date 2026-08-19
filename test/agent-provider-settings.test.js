@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { resolveAgentProviderFromSettings } from "../src/agent-provider.js";
+import { resolveAgentProviderFromSettings, resolveAskProviderFromSettings } from "../src/agent-provider.js";
 
 function settingsBase() {
   return {
@@ -141,4 +141,39 @@ test("resolveAgentProviderFromSettings throws when Codex auth is unavailable", (
     () => resolveAgentProviderFromSettings({ settings, env: { CODEX_HOME: codexHome } }),
     /Codex CLI auth/,
   );
+});
+
+test("resolveAskProviderFromSettings uses the ask block, not the drawing agent's", () => {
+  const settings = settingsBase();
+  // Drawing agent on fast silicon...
+  settings.agent.provider = "groq";
+  settings.apiKeys.groq = "gsk-test";
+  // ...ask agent on a stronger model.
+  settings.ask = { provider: "openrouter", model: "anthropic/claude-sonnet-5" };
+  settings.apiKeys.openrouter = "or-test";
+
+  const resolved = resolveAskProviderFromSettings({ settings, env: {} });
+  assert.equal(resolved.provider, "openrouter");
+  assert.equal(resolved.model, "anthropic/claude-sonnet-5");
+  assert.equal(resolved.apiKey, "or-test");
+});
+
+test("resolveAskProviderFromSettings falls back to the drawing agent when ask is unset", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "groq";
+  settings.agent.groq = { model: "llama-3.3-70b-versatile", baseURL: "https://api.groq.com/openai/v1" };
+  settings.apiKeys.groq = "gsk-test";
+  delete settings.ask;
+
+  const resolved = resolveAskProviderFromSettings({ settings, env: {} });
+  assert.equal(resolved.provider, "groq");
+  assert.equal(resolved.model, "llama-3.3-70b-versatile");
+});
+
+test("resolveAskProviderFromSettings surfaces the same missing-key error as the main resolver", () => {
+  const settings = settingsBase();
+  settings.ask = { provider: "openrouter", model: "anthropic/claude-sonnet-5" };
+  settings.apiKeys.openrouter = "";
+
+  assert.throws(() => resolveAskProviderFromSettings({ settings, env: {} }), /OpenRouter API key/);
 });
