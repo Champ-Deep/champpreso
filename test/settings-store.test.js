@@ -20,6 +20,14 @@ test("createSettingsStore returns defaults when file is missing and env is empty
   assert.equal(settings.agent.codex.model, "gpt-5.5-fast");
 });
 
+test("multiSpeaker default lives top-level, matching where server.js reads and the frontend writes it", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  const settings = await store.load();
+  assert.equal(settings.multiSpeaker, false);
+  assert.equal(DEFAULT_SETTINGS.multiSpeaker, false);
+  assert.ok(!("multiSpeaker" in DEFAULT_SETTINGS.ui), "multiSpeaker must not also live nested under ui - that copy is dead and never read");
+});
+
 test("createSettingsStore seeds settings from environment on first run", async () => {
   const store = createSettingsStore({
     filePath: await tempPath(),
@@ -161,4 +169,41 @@ test("createSettingsStore preserves previously-saved values across reloads, igno
   const settings = await second.load();
   assert.equal(settings.agent.openai.model, "gpt-5-mini");
   assert.equal(settings.apiKeys.openai, "sk-original");
+});
+
+test("DEFAULT_SETTINGS ships an ask block pointed at a real OpenRouter model", () => {
+  assert.equal(DEFAULT_SETTINGS.ask.provider, "openrouter");
+  assert.ok(DEFAULT_SETTINGS.ask.model.includes("/"), "an OpenRouter slug, not a bare model name");
+  // Web search costs money per question, so it must be opt-in.
+  assert.equal(DEFAULT_SETTINGS.ask.webSearch, false);
+  assert.equal(typeof DEFAULT_SETTINGS.ask.maxWebResults, "number");
+});
+
+test("DEFAULT_SETTINGS ships an empty knowledge base rather than guessing at folders", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.knowledgeBase.folders, []);
+  assert.deepEqual(DEFAULT_SETTINGS.knowledgeBase.mcpServers, []);
+  assert.ok(DEFAULT_SETTINGS.knowledgeBase.maxIndexChars > 0);
+});
+
+test("knowledge-base folder arrays are replaced wholesale on save, not merged", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await store.load();
+  await store.save({ knowledgeBase: { folders: ["/a", "/b"] } });
+  const settings = await store.save({ knowledgeBase: { folders: ["/c"] } });
+  // Removing a folder has to actually remove it - a merge would leave /a and /b.
+  assert.deepEqual(settings.knowledgeBase.folders, ["/c"]);
+});
+
+test("the ask block survives a reload without being clobbered by defaults", async () => {
+  const filePath = await tempPath();
+  const first = createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth });
+  await first.load();
+  await first.save({ ask: { model: "openai/gpt-5.6-terra", webSearch: true } });
+
+  const second = createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth });
+  const settings = await second.load();
+  assert.equal(settings.ask.model, "openai/gpt-5.6-terra");
+  assert.equal(settings.ask.webSearch, true);
+  // Untouched keys still come from defaults.
+  assert.equal(settings.ask.provider, "openrouter");
 });

@@ -54,6 +54,7 @@ async function main() {
     ...options,
     settingsStore,
     onStatus: (message) => console.log(message),
+    alwaysWarm: true,
   });
 
   console.log("");

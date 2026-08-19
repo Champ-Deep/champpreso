@@ -129,3 +129,63 @@ test("scoped-edit validates selection and instruction", async () => {
     await new Promise((resolve) => httpServer.close(resolve));
   }
 });
+
+test("scoped-edit recomputes line numbers against the canvas as of execution, not as of request", async () => {
+  // The scoped instruction text (e.g. "Modify ONLY lines [...]") is injected
+  // into the per-turn *messages* (see formatCurrentCanvasTask in src/server.js),
+  // not the system prompt - the system prompt only carries the static agent
+  // instructions + staging primer. So we assert against `messages` here.
+  const capturedMessages = [];
+  let callCount = 0;
+  const { httpServer, url, state } = await startTestServer({
+    generateTextFn: async ({ messages }) => {
+      callCount += 1;
+      if (callCount === 1) {
+        // This is the warmup call fired by /api/preso/start. Delay it so
+        // there is a deterministic window, after the scoped-edit POST below
+        // returns, to shift the canvas before the queued turn (which awaits
+        // warmup) actually executes.
+        await new Promise((r) => setTimeout(r, 50));
+      } else {
+        capturedMessages.push(messages);
+      }
+      return { text: "DONE", finishReason: "stop" };
+    },
+  });
+  try {
+    await fetch(`${url}/api/preso/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stagingElements: [] }),
+    });
+    state.elements = SCENE; // [a, b, c] -> "c" (Gamma) is line 3 right now
+
+    const res = await scopedEdit(url, { selectedIds: ["c"], instruction: "make it red" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.lineNumbers[0], 3, "line 3 is correct at request time");
+
+    // Simulate the canvas shifting BEFORE the scoped-edit turn actually runs
+    // (warmup is still in flight thanks to the 50ms delay above): insert a
+    // new element at the top, which pushes "c" from line 3 to line 4.
+    state.elements = [
+      { id: "z", type: "text", x: 0, y: -40, text: "Zero" },
+      ...SCENE,
+    ];
+
+    // Now let the scoped-edit turn actually execute (it was queued by the POST
+    // above, and was waiting on the delayed warmup call).
+    await new Promise((r) => setTimeout(r, 150));
+
+    assert.equal(callCount, 2, "expected exactly one warmup call and one real turn call");
+    const lastMessages = capturedMessages.at(-1);
+    const messagesText = JSON.stringify(lastMessages);
+    assert.match(
+      messagesText,
+      /Modify ONLY lines \[4\]/,
+      `expected the re-validated line number (4, post-shift) in the prompt, got: ${messagesText}`,
+    );
+  } finally {
+    httpServer.close();
+  }
+});

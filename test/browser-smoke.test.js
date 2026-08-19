@@ -59,14 +59,19 @@ test("browser renders the app shell", async (t) => {
   });
 
   const tab = await waitForChromeTab(url);
-  const text = await waitForRenderedText(tab.webSocketDebuggerUrl, "Start Preso");
+  const text = await waitForRenderedText(tab.webSocketDebuggerUrl, "Start listening");
 
-  assert.match(text, /Start Preso/);
+  assert.match(text, /Start listening/);
 
-  const controls = await evaluateInTab(tab.webSocketDebuggerUrl, `Array.from(document.querySelectorAll(".controls button")).map((button) => button.textContent.trim())`);
-  // Page starts in staging: Start Preso + Reset staging.
-  assert.ok(controls.some((label) => label.includes("Start Preso")), `expected a Start Preso button, got ${JSON.stringify(controls)}`);
-  assert.ok(controls.some((label) => label.includes("Reset Staging")), `expected a Reset Staging button, got ${JSON.stringify(controls)}`);
+  // Page starts in the redesigned Setup screen: the setup rail renders the
+  // session intent, restore/settings entry points and the primary CTA.
+  const railButtons = await evaluateInTab(tab.webSocketDebuggerUrl, `Array.from(document.querySelectorAll(".setup-rail button")).map((button) => button.textContent.trim())`);
+  assert.ok(railButtons.some((label) => label.includes("Start listening")), `expected a Start listening button, got ${JSON.stringify(railButtons)}`);
+  assert.ok(railButtons.some((label) => label.includes("Restore last session")), `expected a Restore last session button, got ${JSON.stringify(railButtons)}`);
+  assert.ok(railButtons.some((label) => label.includes("Settings")), `expected a Settings button, got ${JSON.stringify(railButtons)}`);
+
+  const hasIntent = await evaluateInTab(tab.webSocketDebuggerUrl, `Boolean(document.querySelector(".setup-intent textarea"))`);
+  assert.ok(hasIntent, "expected the session-intent textarea to render");
 });
 
 async function waitForChromeTab(url) {

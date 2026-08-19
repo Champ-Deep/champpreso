@@ -1,0 +1,287 @@
+/* =========================================================
+   AEGIS · COLORS & TYPE
+   ---------------------------------------------------------
+   The base layer of the Champ Suite design language.
+   Drop this at the top of any global stylesheet.
+
+   This file is the canonical token reference for THIS
+   design system. It merges and extends the original
+   champ-tokens.css with semantic aliases for headings,
+   body, mono, fg/bg layers, etc.
+
+   Fonts are loaded from Google Fonts — substitution flag:
+   Space Grotesk, Inter, JetBrains Mono, Fraunces are
+   all loaded from fonts.googleapis.com. If you ship
+   for production, self-host instead. See /fonts/README.md.
+   ========================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600&display=swap");
+
+:root {
+  /* =======================================================
+     1 · NEUTRALS · THE CANVAS
+     ======================================================= */
+  --champ-ink:    #0B0D12;  /* primary dark surface, near-black with indigo cast */
+  --champ-carbon: #14171F;  /* elevated dark surface (sidebars, modals) */
+  --champ-slate:  #1E222D;  /* card backgrounds on dark */
+  --champ-steel:  #2A2F3D;  /* borders and dividers on dark */
+  --champ-mist:   #6B7280;  /* tertiary text */
+  --champ-cloud:  #D1D5DB;  /* body text on dark */
+  --champ-paper:  #F4F4F0;  /* warm off-white, light-mode primary */
+  --champ-snow:   #FAFAF7;  /* lightest surface */
+
+  /* =======================================================
+     2 · FAMILY RING · CHAMP EMBER (the suite signature)
+     ======================================================= */
+  --champ-ember:      #FF6B35;
+  --champ-ember-glow: #FF8C5A;
+  --champ-ember-deep: #C2410C;
+  --champ-ember-char: #7C2D12;
+
+  /* =======================================================
+     3 · SEMANTIC · UNIVERSAL SIGNALS
+     ======================================================= */
+  --champ-verdant: #10B981; /* success */
+  --champ-amber:   #F59E0B; /* warning */
+  --champ-crimson: #EF4444; /* danger */
+  --champ-azure:   #3B82F6; /* info */
+
+  /* =======================================================
+     4 · TYPOGRAPHY
+     ======================================================= */
+  --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-body:    'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+  --font-accent:  'Fraunces', Georgia, serif;
+
+  /* Type scale (modular ratio 1.250) */
+  --fs-caption:  0.75rem;   /* 12 */
+  --fs-sm:       0.875rem;  /* 14 */
+  --fs-base:     1rem;      /* 16 */
+  --fs-lg:       1.125rem;  /* 18 */
+  --fs-h6:       1.25rem;   /* 20 */
+  --fs-h5:       1.5rem;    /* 24 */
+  --fs-h4:       1.875rem;  /* 30 */
+  --fs-h3:       2.25rem;   /* 36 */
+  --fs-h2:       3rem;      /* 48 */
+  --fs-h1:       3.75rem;   /* 60 */
+  --fs-display:  5rem;      /* 80 */
+
+  /* Line heights */
+  --lh-tight:    1.15;  /* @kind font */
+  --lh-snug:     1.35;  /* @kind font */
+  --lh-normal:   1.5;   /* @kind font */
+  --lh-relaxed:  1.6;   /* @kind font */
+  --lh-loose:    1.8;   /* @kind font */
+
+  /* Letter spacing */
+  --ls-tight:    -0.04em; /* @kind font */
+  --ls-snug:     -0.02em; /* @kind font */
+  --ls-normal:   0;       /* @kind font */
+  --ls-wide:     0.05em;  /* @kind font */
+  --ls-wider:    0.1em;   /* @kind font */
+  --ls-widest:   0.15em;  /* @kind font */
+
+  /* =======================================================
+     5 · SPACING · 8-POINT WITH 4-POINT HALF STEP
+     ======================================================= */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  24px;
+  --s-6:  32px;
+  --s-7:  48px;
+  --s-8:  64px;
+  --s-9:  96px;
+  --s-10: 128px;
+
+  /* =======================================================
+     6 · RADII
+     ======================================================= */
+  --r-sm:   4px;
+  --r-md:   8px;
+  --r-lg:   12px; /* default for cards */
+  --r-xl:   16px;
+  --r-2xl:  24px;
+  --r-full: 9999px;
+
+  /* =======================================================
+     7 · MOTION
+     ======================================================= */
+  --t-micro:      120ms; /* @kind other */
+  --t-std:        220ms; /* @kind other */
+  --t-deliberate: 380ms; /* @kind other */
+  --t-hero:       600ms; /* @kind other */
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1); /* @kind other */
+  --ease-smooth:  cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --ease-in:      cubic-bezier(0.4, 0, 1, 1); /* @kind other */
+  --ease-out:     cubic-bezier(0, 0, 0.2, 1); /* @kind other */
+
+  /* =======================================================
+     8 · SHADOWS (dark-mode defaults)
+     ======================================================= */
+  --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md:   0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg:   0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-xl:   0 24px 64px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 32px;
+
+  /* =======================================================
+     9 · SEMANTIC ROLE TOKENS (use these in components)
+     ======================================================= */
+  /* Surfaces */
+  --bg:          var(--champ-ink);
+  --bg-elevated: var(--champ-carbon);
+  --bg-card:     var(--champ-slate);
+  --bg-inset:    var(--champ-steel);
+
+  --surface-0: var(--champ-ink);
+  --surface-1: var(--champ-carbon);
+  --surface-2: var(--champ-slate);
+  --surface-3: var(--champ-steel);
+
+  /* Foreground */
+  --fg:          var(--champ-snow);
+  --fg-1:        var(--champ-snow);
+  --fg-2:        var(--champ-cloud);
+  --fg-3:        var(--champ-mist);
+  --text-primary:   var(--champ-snow);
+  --text-secondary: var(--champ-cloud);
+  --text-tertiary:  var(--champ-mist);
+
+  /* Borders */
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong:  rgba(255, 255, 255, 0.20);
+
+  /* Accent */
+  --accent:        var(--champ-ember);
+  --accent-glow:   var(--champ-ember-glow);
+  --accent-deep:   var(--champ-ember-deep);
+
+  /* Focus ring (always Champ Ember) */
+  --focus-ring:        0 0 0 3px rgba(255, 107, 53, 0.4);
+  --focus-ring-offset: 2px;
+}
+
+/* =========================================================
+   LIGHT THEME OVERRIDE
+   ========================================================= */
+[data-theme="light"] {
+  --bg:          var(--champ-snow);
+  --bg-elevated: var(--champ-paper);
+  --bg-card:     #FFFFFF;
+  --bg-inset:    #E5E7EB;
+
+  --surface-0: var(--champ-snow);
+  --surface-1: var(--champ-paper);
+  --surface-2: #FFFFFF;
+  --surface-3: #E5E7EB;
+
+  --fg:          var(--champ-ink);
+  --fg-1:        var(--champ-ink);
+  --fg-2:        var(--champ-carbon);
+  --fg-3:        var(--champ-mist);
+  --text-primary:   var(--champ-ink);
+  --text-secondary: var(--champ-carbon);
+  --text-tertiary:  var(--champ-mist);
+
+  --border-subtle:  rgba(11, 13, 18, 0.06);
+  --border-default: rgba(11, 13, 18, 0.10);
+  --border-strong:  rgba(11, 13, 18, 0.20);
+
+  --shadow-sm: 0 1px 2px rgba(11, 13, 18, 0.06);
+  --shadow-md: 0 4px 12px rgba(11, 13, 18, 0.08);
+  --shadow-lg: 0 12px 32px rgba(11, 13, 18, 0.12);
+  --shadow-xl: 0 24px 64px rgba(11, 13, 18, 0.16);
+
+  /* Light-mode contrast safety: Ember as text needs to be
+     Ember Deep (#C2410C, 4.95:1 on Snow). The bright Ember
+     stays alive for fills, borders, glows via --champ-ember-glow. */
+  --champ-ember:      #C2410C;
+  --champ-ember-glow: #FF6B35;
+  --champ-ember-deep: #7C2D12;
+  --accent:           #C2410C;
+}
+
+/* =========================================================
+   PRODUCT WORLDS (themed palettes)
+   Apply on a wrapper; descendants use var(--p/--s/--g/--t).
+   ========================================================= */
+.world-iq        { --p: #6366F1; --s: #8B5CF6; --g: #22D3EE; --t: #1E1B4B; }
+.world-mail      { --p: #2563EB; --s: #1E40AF; --g: #60A5FA; --t: #0F172A; }
+.world-graph     { --p: #10B981; --s: #047857; --g: #6EE7B7; --t: #022C22; }
+.world-oracle    { --p: #A855F7; --s: #7E22CE; --g: #C084FC; --t: #2E1065; }
+.world-harbinger { --p: #F97316; --s: #EA580C; --g: #FCD34D; --t: #431407; }
+.world-video     { --p: #F43F5E; --s: #E11D48; --g: #FB7185; --t: #4C0519; }
+.world-pulse     { --p: #EC4899; --s: #BE185D; --g: #F9A8D4; --t: #500724; }
+.world-scan      { --p: #14B8A6; --s: #0F766E; --g: #5EEAD4; --t: #042F2E; }
+.world-deck      { --p: #EAB308; --s: #A16207; --g: #FDE047; --t: #422006; }
+.world-quest     { --p: #84CC16; --s: #4D7C0F; --g: #BEF264; --t: #1A2E05; }
+.world-connect   { --p: #0EA5E9; --s: #0369A1; --g: #67E8F9; --t: #082F49; }
+.world-utm       { --p: #64748B; --s: #334155; --g: #94A3B8; --t: #0F172A; }
+
+/* =========================================================
+   BASE TYPE
+   ========================================================= */
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  background: var(--surface-0);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: var(--ls-snug);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+h1 { font-size: var(--fs-h1); letter-spacing: -0.03em; }
+h2 { font-size: var(--fs-h2); }
+h3 { font-size: var(--fs-h3); }
+h4 { font-size: var(--fs-h4); }
+h5 { font-size: var(--fs-h5); font-weight: 500; }
+h6 { font-size: var(--fs-h6); font-weight: 500; }
+
+p     { font-size: var(--fs-base); line-height: var(--lh-relaxed); color: var(--text-secondary); }
+small { font-size: var(--fs-sm); color: var(--text-secondary); }
+
+code, pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  color: var(--accent);
+}
+
+.editorial {
+  font-family: var(--font-accent);
+  font-style: italic;
+  font-weight: 400;
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

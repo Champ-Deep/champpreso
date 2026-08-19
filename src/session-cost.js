@@ -26,6 +26,15 @@ export const TRANSCRIPTION_PRICING = {
     "gpt-4o-mini-transcribe": 0.003,
     "whisper-1":              0.006,
   },
+  // Groq bills Whisper by audio hour: $0.04/hr for Large v3 Turbo, $0.111/hr
+  // for full Large v3. The free tier covers 14,400 minutes/day, so in practice
+  // most sessions cost nothing - but we price it honestly rather than showing
+  // "free" and surprising someone who runs past the allowance.
+  groq: {
+    "whisper-large-v3-turbo": 0.04 / 60,
+    "whisper-large-v3":       0.111 / 60,
+    "distil-whisper-large-v3-en": 0.02 / 60,
+  },
 };
 
 export function computeAgentCost({ provider, model, usage }) {

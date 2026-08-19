@@ -25,6 +25,30 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // because Whisper Large v3 is the SOTA Whisper variant.
     groq: { model: "whisper-large-v3-turbo", baseURL: "https://api.groq.com/openai/v1" },
   },
+  // The ASK agent: a separate, more thoughtful model that answers questions
+  // about the board instead of drawing on it. Deliberately independent of
+  // agent.* so the drawing agent can stay on fast-inference silicon (Groq /
+  // Cerebras) while questions go to a stronger reasoning model. OpenRouter is
+  // the default because it is also the only provider here that can run a web
+  // search on our behalf.
+  ask: {
+    provider: "openrouter",
+    model: "anthropic/claude-sonnet-5",
+    // Web search via OpenRouter's built-in plugin. ~$0.02 per question at the
+    // default 5 results, billed by OpenRouter, so it stays off unless wanted.
+    webSearch: false,
+    maxWebResults: 5,
+  },
+  // Reference material the ask agent can search. Folders are indexed locally
+  // (keyword search, no embeddings, no network). MCP servers reach anything
+  // else - Notion, Drive, an internal wiki. Both are optional; with neither
+  // configured the ask agent simply answers from the board and transcript.
+  knowledgeBase: {
+    folders: [],
+    // [{ name, command, args, env }] for stdio, or [{ name, url }] for HTTP.
+    mcpServers: [],
+    maxIndexChars: 2_000_000,
+  },
   apiKeys: {
     openai: "",
     openrouter: "",
@@ -37,6 +61,19 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // (roughly a 50-page transcript). The primer message will surface this to
   // the agent on every preso.
   notesAndTranscripts: "",
+  // Multiple speakers in the room. Top-level (not under ui) because
+  // server.js reads settings.multiSpeaker directly in POST /api/session/start
+  // and POST /api/session/seed, and the frontend Setup screen saves it
+  // top-level via saveSettings({ multiSpeaker }). When true, the agent is
+  // told to track and attribute distinct voices instead of assuming one
+  // speaker.
+  multiSpeaker: false,
+  // User-saved canvas templates: [{ id, label, intent, elements }]. Saved from
+  // the Setup screen ("save canvas as template"); elements are full Excalidraw
+  // elements re-id'd under the tpl-custom- prefix. Arrays are replaced
+  // wholesale on save (deepMerge treats arrays as leaf values), which is what
+  // add/delete both rely on.
+  customTemplates: [],
   // UI preferences. Every Aegis-spec toggle so the user can adjust the entire
   // surface without editing CSS. Persisted via PUT /api/settings, rebroadcast
   // on every save so all WS clients converge instantly.
@@ -54,17 +91,15 @@ export const DEFAULT_SETTINGS = Object.freeze({
     captionMode: "presentation", // "presentation" | "working"
     // Floating Question Card anchor edge.
     questionPos: "top", // "top" | "bottom"
-    // Canvas palette swatch row on/off + which palette is active.
+    // Canvas palette swatch row on/off. The active palette itself is just
+    // themePrimary (above) - one accent color field, not a separate one.
     paletteRow: true,
-    activePalette: "champions", // "champions" | "cool" | "warm" | "mono"
     // Mode toggle breathing underline micro-interaction.
     toggleBreathe: true,
     // First-launch onboarding ribbon. User dismisses; persists as false.
     onboarding: true,
     // Dark panel vs light panel. Aegis defaults to dark.
     panelTheme: "dark", // "dark" | "light"
-    // v0.7.0: Session Mode. Three behaviors the agent adapts to.
-    sessionMode: "strategy", // "strategy" | "presentation" | "cothinking"
     // Provider fallback chain. When the primary provider errors or times out,
     // the server tries the next in this list. Empty entries are skipped.
     providerFallback: ["groq", "openrouter", "openai", "ollama"],

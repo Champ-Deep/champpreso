@@ -7,6 +7,32 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import { STARTER_ELEMENTS } from "./starter-elements.js";
+import {
+  getConfig as apiGetConfig,
+  saveSettings as apiSaveSettings,
+  startSession as apiStartSession,
+  backToSetup as apiBackToSetup,
+  pauseSession as apiPauseSession,
+  resumeSession as apiResumeSession,
+  undoTurn as apiUndoTurn,
+  interruptTurn as apiInterruptTurn,
+  pinElement as apiPinElement,
+  clearPins as apiClearPins,
+  answerQuestion as apiAnswerQuestion,
+  sendScopedEdit as apiSendScopedEdit,
+  sendTypedTurn as apiSendTypedTurn,
+  askAgent as apiAskAgent,
+  resetSession as apiResetSession,
+} from "./api-client.js";
+import { createWsClient } from "./ws-client.js";
+import { startMicCapture } from "./mic-capture.js";
+import {
+  createExcalidrawSync,
+  nativeElementsToSkeletonForSync,
+} from "./excalidraw-sync.js";
+import { SetupScreen } from "./screens/setup-screen.js";
+import { ListeningScreen } from "./screens/listening-screen.js";
+import { ReviewScreen } from "./screens/review-screen.js";
 
 // v0.5.0: Mermaid integration. Loaded lazily on first render_mermaid call so
 // the ~200KB Mermaid bundle doesn't slow first paint. The import promise is
@@ -23,54 +49,13 @@ async function getMermaidToExcalidraw() {
   return mermaidToExcalidrawPromise;
 }
 
-const SAMPLE_RATE = 24000;
-const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
-const OPENAI_AGENT_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
-const CODEX_AGENT_MODELS = ["gpt-5.5-fast", "gpt-5.5", "gpt-5.4"];
-// Groq's fast catalog. llama-3.3-70b-versatile is the strongest tool-caller.
-// llama-3.3-70b-specdec is even faster (~750 tok/s) via speculative decoding.
-const GROQ_AGENT_MODELS = [
-  "llama-3.3-70b-versatile",
-  "llama-3.3-70b-specdec",
-  "llama-3.1-70b-versatile",
-  "llama-3.1-8b-instant",
-  "qwen-2.5-32b",
-  "deepseek-r1-distill-llama-70b",
-];
-// Cerebras catalog. llama-3.3-70b runs ~2000 tok/s. The smaller models are
-// useful when rate limits become the bottleneck.
-const CEREBRAS_AGENT_MODELS = [
-  "llama-3.3-70b",
-  "llama3.1-70b",
-  "llama3.1-8b",
-  "qwen-3-32b",
-];
-// Common OpenRouter model slugs. The picker accepts free text so any
-// OpenRouter slug works; these are just sensible defaults for the dropdown.
-const OPENROUTER_AGENT_MODELS = [
-  "deepseek/deepseek-v4-flash",
-  "deepseek/deepseek-v4-pro",
-  "anthropic/claude-3.5-sonnet",
-  "anthropic/claude-3.7-sonnet",
-  "anthropic/claude-haiku-4.5",
-  "openai/gpt-5.5",
-  "openai/gpt-5.4-mini",
-  "google/gemini-2.5-pro",
-  "meta-llama/llama-3.3-70b-instruct",
-  "x-ai/grok-3",
-];
-const OPENAI_TRANSCRIPTION_MODELS = [
-  "gpt-realtime-whisper",
-  "gpt-4o-transcribe",
-  "gpt-4o-mini-transcribe",
-  "whisper-1",
-];
-const MOONSHINE_MODELS = ["tiny", "small", "medium"];
+// Model / option catalogs now live in public/model-catalog.js and are imported
+// above so the legacy status-card editors and the redesigned Setup settings
+// sheet share one source of truth.
 // Cap the Live Transcript History so long presos don't grow the array unbounded.
 // Mirrors the server-side turnHistory cap in whiteboard-session.js.
 const TRANSCRIPT_HISTORY_LIMIT = 50;
 const MIC_STORAGE_KEY = "champpreso.mic";
-const PANEL_HIDDEN_STORAGE_KEY = "champpreso.panelHidden";
 
 const STARTER_STAGING_ELEMENTS = [];
 
@@ -106,14 +91,6 @@ function loadStoredMic() {
 
 function saveStoredMic(mic) {
   localStorage.setItem(MIC_STORAGE_KEY, JSON.stringify(mic));
-}
-
-function loadStoredPanelHidden() {
-  try {
-    return localStorage.getItem(PANEL_HIDDEN_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
 }
 
 function useExcalidrawThemeSync(apiRef, panelTheme) {
@@ -152,6 +129,12 @@ function App() {
   const [api, setApi] = React.useState(null);
   const [mode, setMode] = React.useState("staging");
   const isLive = mode === "live";
+  // Redesign vocabulary: "setup"/"listening" mirror the server's
+  // toWireMode(state.mode) mapping, sent as `lifecycleMode` on the "mode"
+  // WS message. `phase` additionally folds in capture:paused to produce a
+  // 4th value; "review" is a client-only phase introduced by a later task
+  // (never sent by the server).
+  const [lifecycleMode, setLifecycleMode] = React.useState("setup");
   const [listening, setListening] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [presoStarting, setPresoStarting] = React.useState(false);
@@ -169,13 +152,20 @@ function App() {
   // v0.15.0: typed turn ("type a point to add to the board").
   const [sayText, setSayText] = React.useState("");
   const [saySending, setSaySending] = React.useState(false);
+  // ---- ask the board ----
+  // The answer lands here from the WebSocket rather than from the fetch
+  // response, so every client in the room renders it - a shared whiteboard
+  // shouldn't give a private answer to whoever happened to type the question.
+  const [askText, setAskText] = React.useState("");
+  const [askBusy, setAskBusy] = React.useState(false);
+  const [askAnswer, setAskAnswer] = React.useState(null);
+  const [askError, setAskError] = React.useState("");
   const [error, setError] = React.useState("");
   const [micError, setMicError] = React.useState(false);
   const [agentError, setAgentError] = React.useState(false);
   const [sttError, setSttError] = React.useState(false);
   const [expandedRow, setExpandedRow] = React.useState(null);
   const [mic, setMic] = React.useState(loadStoredMic);
-  const [panelHidden, setPanelHidden] = React.useState(loadStoredPanelHidden);
   const [analyser, setAnalyser] = React.useState(null);
   const [resetConfirming, setResetConfirming] = React.useState(false);
   const [resetting, setResetting] = React.useState(false);
@@ -190,6 +180,26 @@ function App() {
   // v0.2.0 state: queue backlog, paused capture, pending clarifying question.
   const [queueStats, setQueueStats] = React.useState(null);
   const [capturePaused, setCapturePaused] = React.useState(false);
+  // Redesign "halo" live surface. `endedSession` is a client-only flag the End
+  // button sets to flip `phase` to "review" (Task 10 owns the Review screen and
+  // the actual /review call). `nudgeSignal` carries the latest steer result so
+  // the steer bar can show its applied/failed state; the bumped nonce lets the
+  // ListeningScreen re-trigger the banner even on repeat outcomes.
+  const [endedSession, setEndedSession] = React.useState(false);
+  const [nudgeSignal, setNudgeSignal] = React.useState(null);
+  const nudgeNonceRef = React.useRef(0);
+  // Wall-clock timestamp of when the preso last went live. Used by the Review
+  // screen to show a real session duration in its meta line.
+  const sessionStartedAtRef = React.useRef(null);
+  // Derived lifecycle phase: "setup" | "listening" | "paused" | "review".
+  // Paused is only meaningful once listening has started; capture:paused
+  // messages received before then (there shouldn't be any) are ignored.
+  // "review" is a client-only phase the End button sets via `endedSession`.
+  const phase = endedSession
+    ? "review"
+    : lifecycleMode === "listening" && capturePaused
+      ? "paused"
+      : lifecycleMode;
   const [pendingQuestion, setPendingQuestion] = React.useState(null);
   // v0.3.0 Aegis UI prefs. Local copy of settings.ui so UI feels instant; saves
   // debounced like agentInstructions. Defaults mirror DEFAULT_SETTINGS.ui on
@@ -202,7 +212,6 @@ function App() {
     captionMode: "presentation",
     questionPos: "top",
     paletteRow: true,
-    activePalette: "champions",
     toggleBreathe: true,
     onboarding: true,
     panelTheme: "dark",
@@ -217,6 +226,20 @@ function App() {
   // dismisses after a few seconds. Cap at 4 visible to avoid stacking forever.
   const [toasts, setToasts] = React.useState([]);
   const toastIdRef = React.useRef(0);
+  // Push an ephemeral toast onto the stack. Caps at 4 visible (drops the
+  // oldest) and auto-dismisses after 4s. `variant` drives the toast-<variant>
+  // class (info | success | warn | error). Referenced from the WS onMessage
+  // handler (interrupt / undo / pin / nudge events).
+  function showToast(text, { variant = "info" } = {}) {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, text, variant }].slice(-4));
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }
+  function dismissToast(id) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }
   const [transcriptHistory, setTranscriptHistory] = React.useState([]);
   const transcriptHistoryEndRef = React.useRef(null);
   React.useEffect(() => {
@@ -261,11 +284,6 @@ function App() {
     listeningRef.current = listening;
   }, [listening]);
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(PANEL_HIDDEN_STORAGE_KEY, panelHidden ? "1" : "0");
-    } catch {}
-  }, [panelHidden]);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   React.useEffect(() => {
@@ -436,11 +454,7 @@ function App() {
   // snapshot taken just before runAgent and restores state.elements.
   async function handleUndoTurn() {
     try {
-      const res = await fetch("/api/preso/undo-turn", { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Undo failed.");
-      }
+      await apiUndoTurn();
     } catch (e) {
       setError(e.message || "Undo failed.");
     }
@@ -448,11 +462,7 @@ function App() {
 
   async function handleInterrupt() {
     try {
-      const res = await fetch("/api/preso/interrupt", { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Interrupt failed.");
-      }
+      await apiInterruptTurn();
     } catch (e) {
       setError(e.message || "Interrupt failed.");
     }
@@ -472,11 +482,7 @@ function App() {
     }
     try {
       for (const id of ids) {
-        await fetch("/api/preso/pin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id }),
-        });
+        await apiPinElement(id);
       }
     } catch (e) {
       setError(e.message || "Pin failed.");
@@ -485,7 +491,7 @@ function App() {
 
   async function clearAllPins() {
     try {
-      await fetch("/api/preso/pins/clear", { method: "POST" });
+      await apiClearPins();
     } catch (e) {
       setError(e.message || "Clear pins failed.");
     }
@@ -507,16 +513,7 @@ function App() {
     }
     setScopedEditSending(true);
     try {
-      const res = await fetch("/api/preso/scoped-edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selectedIds, instruction: text }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Scoped edit failed.");
-        return;
-      }
+      await apiSendScopedEdit({ selectedIds, instruction: text });
       setScopedEditText("");
     } catch (e) {
       setError(e.message || "Scoped edit failed.");
@@ -532,21 +529,30 @@ function App() {
     if (!trimmed) return;
     setSaySending(true);
     try {
-      const res = await fetch("/api/preso/say", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Could not add that to the board.");
-        return;
-      }
+      await apiSendTypedTurn(trimmed);
       setSayText("");
     } catch (e) {
       setError(e.message || "Could not add that to the board.");
     } finally {
       setSaySending(false);
+    }
+  }
+
+  // Ask a question about the board. Read-only: the agent answers, it does not
+  // draw. The answer arrives over the WS as `agent:answer` (see the handler
+  // below), which is what actually populates askAnswer.
+  async function askBoard(question) {
+    const trimmed = String(question ?? "").trim();
+    if (!trimmed || askBusy) return;
+    setAskBusy(true);
+    setAskError("");
+    try {
+      await apiAskAgent(trimmed);
+      setAskText("");
+    } catch (e) {
+      setAskError(e.message || "Couldn't answer that.");
+    } finally {
+      setAskBusy(false);
     }
   }
 
@@ -673,33 +679,55 @@ function App() {
     const next = !capturePaused;
     setCapturePaused(next); // optimistic
     try {
-      const res = await fetch(`/api/preso/${next ? "pause" : "resume"}`, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setCapturePaused(!next); // rollback
-        setError(body.error || "Failed to toggle capture pause.");
-      }
+      await (next ? apiPauseSession() : apiResumeSession());
     } catch (e) {
-      setCapturePaused(!next);
+      setCapturePaused(!next); // rollback
       setError(e.message || "Failed to toggle capture pause.");
     }
   }
+
+  // End the live session from the halo's End button. Client-side only: stop mic
+  // capture (matching pauseSession's audio teardown) and flip `phase` to
+  // "review". The Review screen (Task 10) owns the actual POST /review so it can
+  // show a loading state while the summary generates.
+  async function endToReview() {
+    if (listening) await stopListening();
+    setEndedSession(true);
+  }
+
+  // "New session" from the Review screen. Review is client-side-only and the
+  // server's state.mode is still "live". We use back-to-staging (not reset)
+  // here on purpose: only back-to-staging broadcasts a "mode" WS message
+  // (mode: "staging"), which the mode handler above turns into
+  // setEndedSession(false) + lifecycleMode "setup" + a cleared transcript,
+  // returning the user to a clean Setup screen. POST /api/session/reset clears
+  // the board mid-session but stays in live mode, so it would leave the UI
+  // stuck in Review. Session cost is reset by the next Start Preso.
+  async function newSessionFromReview() {
+    try {
+      await apiBackToSetup();
+    } catch (e) {
+      setError(e.message || "Couldn't start a new session.");
+    }
+  }
+
+  // Auto-start mic capture when the session goes live (phase "listening"). The
+  // redesign has no manual "Start talking" button — the halo is live the moment
+  // Setup hands off. Resuming from "paused" doesn't re-fire (listening is still
+  // true because pause is server-side capture pause, not a client mic stop).
+  React.useEffect(() => {
+    if (phase === "listening" && !listening && !starting && !endedSession) {
+      startListening();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   async function answerPendingQuestion(text) {
     if (!pendingQuestion) return;
     const trimmed = String(text ?? "").trim();
     if (!trimmed) return;
     try {
-      const res = await fetch("/api/preso/answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: pendingQuestion.id, text: trimmed }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error || "Failed to send answer.");
-        return;
-      }
+      await apiAnswerQuestion({ id: pendingQuestion.id, text: trimmed });
       setPendingQuestion(null);
     } catch (e) {
       setError(e.message || "Failed to send answer.");
@@ -759,243 +787,259 @@ function App() {
     } catch {}
   }
 
-  function handleExcalidrawChange(elements, appState) {
-    // v0.15.0: track the current selection (cheap; only re-render on count
-    // change) so the "Edit selected" scoped-edit bar can appear in live mode.
-    const sel = appState?.selectedElementIds || {};
-    const ids = Object.keys(sel).filter((id) => sel[id]);
-    if (ids.length !== selectedIdsRef.current.length || ids.some((id, i) => id !== selectedIdsRef.current[i])) {
-      selectedIdsRef.current = ids;
-      setSelectedCount(ids.length);
-    }
-    // Only push user edits to the server while in live mode. In staging the
-    // canvas is a client-side scratchpad; the server doesn't need to know.
-    if (modeRef.current !== "live") return;
-    // Allow user edits while listening, EXCEPT when the agent is actively thinking/processing a turn.
-    if (agentStatusRef.current === "thinking") return;
-    clearTimeout(userElementsSyncTimerRef.current);
-    userElementsSyncTimerRef.current = setTimeout(() => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const cleaned = nativeElementsToSkeletonForSync(elements ?? []);
-      const hash = JSON.stringify(cleaned);
-      if (hash === lastSyncedElementsHashRef.current) return;
-      lastSyncedElementsHashRef.current = hash;
-      ws.send(
-        JSON.stringify({ type: "whiteboard:user-elements", elements: cleaned }),
-      );
-    }, 500);
-  }
+  // Mode/status-aware canvas <-> server sync contract, extracted into
+  // public/excalidraw-sync.js. Recreated each render (cheap - just closures
+  // over stable refs/setters), matching the previous per-render function
+  // declarations. See that module for the guard rationale.
+  const {
+    applyScene,
+    handleExcalidrawChange,
+    applyWhiteboardViewportCommand,
+  } = createExcalidrawSync({
+    getExcalidrawApi: () => apiRef.current,
+    getMode: () => modeRef.current,
+    getAgentStatus: () => agentStatusRef.current,
+    getWs: () => wsRef.current,
+    selectedIdsRef,
+    setSelectedCount,
+    userElementsSyncTimerRef,
+    lastSyncedElementsHashRef,
+    scheduleScreenshot: () => scheduleWhiteboardScreenshot(),
+    getZoom: () => currentWhiteboardZoom(),
+    setZoom: (zoom) => setWhiteboardZoom(zoom),
+  });
 
   // Persistent WebSocket connection for the lifetime of the app.
   React.useEffect(() => {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
-    wsRef.current = ws;
-
-    ws.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === "config")
-        setTranscriptionEngine(message.transcriptionEngine);
-      if (message.type === "settings") setSettings(message.settings);
-      if (message.type === "transcript:partial") {
-        const text = (message.text ?? "").trim();
-        if (text) {
-          clearTimeout(captionTimerRef.current);
-          setCaptionText(text);
+    const wsClient = createWsClient({
+      onMessage: (message) => {
+        if (message.type === "config")
+          setTranscriptionEngine(message.transcriptionEngine);
+        if (message.type === "settings") setSettings(message.settings);
+        if (message.type === "transcript:partial") {
+          const text = (message.text ?? "").trim();
+          if (text) {
+            clearTimeout(captionTimerRef.current);
+            setCaptionText(text);
+          }
         }
-      }
-      if (message.type === "transcript:committed") {
-        const text = (message.text ?? "").trim();
-        if (text) {
-          clearTimeout(captionTimerRef.current);
-          setCaptionText(text);
-          captionTimerRef.current = setTimeout(() => setCaptionText(""), 3500);
+        if (message.type === "transcript:committed") {
+          const text = (message.text ?? "").trim();
+          if (text) {
+            clearTimeout(captionTimerRef.current);
+            setCaptionText(text);
+            captionTimerRef.current = setTimeout(() => setCaptionText(""), 3500);
+            setTranscriptHistory((prev) => {
+              if (prev.length > 0 && prev[prev.length - 1].status === "queued" && prev[prev.length - 1].text === text) {
+                return prev;
+              }
+              return [
+                ...prev,
+                {
+                  id: `temp-${Date.now()}-${Math.random()}`,
+                  text,
+                  status: "queued",
+                  timestamp: new Date().toISOString()
+                }
+              ].slice(-TRANSCRIPT_HISTORY_LIMIT);
+            });
+          }
+        }
+        if (message.type === "agent:turn-start") {
           setTranscriptHistory((prev) => {
-            if (prev.length > 0 && prev[prev.length - 1].status === "queued" && prev[prev.length - 1].text === text) {
-              return prev;
-            }
+            const filtered = prev.filter((item) => item.status !== "queued");
             return [
-              ...prev,
+              ...filtered,
               {
-                id: `temp-${Date.now()}-${Math.random()}`,
-                text,
-                status: "queued",
-                timestamp: new Date().toISOString()
+                id: message.turnId,
+                text: message.transcript,
+                status: "processing",
+                timestamp: message.timestamp,
+                startedAt: message.timestamp
               }
             ].slice(-TRANSCRIPT_HISTORY_LIMIT);
           });
         }
-      }
-      if (message.type === "agent:turn-start") {
-        setTranscriptHistory((prev) => {
-          const filtered = prev.filter((item) => item.status !== "queued");
-          return [
-            ...filtered,
-            {
-              id: message.turnId,
-              text: message.transcript,
-              status: "processing",
-              timestamp: message.timestamp,
-              startedAt: message.timestamp
-            }
-          ].slice(-TRANSCRIPT_HISTORY_LIMIT);
-        });
-      }
-      if (message.type === "agent:turn-end") {
-        setTranscriptHistory((prev) => {
-          return prev.map((item) => {
-            if (item.id === message.turnId) {
-              return { ...item, status: "completed", durationMs: turnDurationMs(item.startedAt, message.timestamp) };
-            }
-            return item;
+        if (message.type === "agent:turn-end") {
+          setTranscriptHistory((prev) => {
+            return prev.map((item) => {
+              if (item.id === message.turnId) {
+                return { ...item, status: "completed", durationMs: turnDurationMs(item.startedAt, message.timestamp) };
+              }
+              return item;
+            });
           });
-        });
-      }
-      if (message.type === "agent:turn-error") {
-        setTranscriptHistory((prev) => {
-          return prev.map((item) => {
-            if (item.id === message.turnId) {
-              return { ...item, status: "failed", error: message.error, durationMs: turnDurationMs(item.startedAt, message.timestamp) };
-            }
-            return item;
+        }
+        if (message.type === "agent:turn-error") {
+          setTranscriptHistory((prev) => {
+            return prev.map((item) => {
+              if (item.id === message.turnId) {
+                return { ...item, status: "failed", error: message.error, durationMs: turnDurationMs(item.startedAt, message.timestamp) };
+              }
+              return item;
+            });
           });
-        });
-      }
-      if (message.type === "agent:status") {
-        setAgentStatus(message.status);
-        if (message.status === "thinking") setAgentError(false);
-      }
-      if (message.type === "warmup") {
-        setWarmupState({
-          state: message.state,
-          attempt: message.attempt ?? 0,
-          maxAttempts: message.maxAttempts ?? 8,
-        });
-      }
-      if (message.type === "cost") {
-        setCost({ agent: message.agent, transcription: message.transcription });
-      }
-      if (message.type === "mode") {
-        const previousMode = modeRef.current;
-        modeRef.current = message.mode;
-        setMode(message.mode);
-        if (message.mode === "staging") {
-          setTranscriptHistory([]);
-          if (previousMode === "live") {
-            // Returning from live: restore the staged canvas the user was last working on.
-            applyScene(stagingSceneRef.current, { recenter: true });
+        }
+        if (message.type === "agent:status") {
+          setAgentStatus(message.status);
+          if (message.status === "thinking") setAgentError(false);
+        }
+        if (message.type === "warmup") {
+          setWarmupState({
+            state: message.state,
+            attempt: message.attempt ?? 0,
+            maxAttempts: message.maxAttempts ?? 8,
+          });
+        }
+        if (message.type === "cost") {
+          setCost({ agent: message.agent, transcription: message.transcription });
+        }
+        if (message.type === "mode") {
+          const previousMode = modeRef.current;
+          modeRef.current = message.mode;
+          setMode(message.mode);
+          setLifecycleMode(
+            message.lifecycleMode ?? (message.mode === "live" ? "listening" : "setup"),
+          );
+          if (message.mode === "staging") {
+            setTranscriptHistory([]);
+            setEndedSession(false);
+            if (previousMode === "live") {
+              // Returning from live: restore the staged canvas the user was last working on.
+              applyScene(stagingSceneRef.current, { recenter: true });
+            }
           }
         }
-      }
-      if (message.type === "whiteboard:update") {
-        // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
-        const isFreshStarter =
-          Array.isArray(message.elements) &&
-          message.elements.length <= STARTER_ELEMENTS.length + 1;
-        const cleaned = nativeElementsToSkeletonForSync(message.elements ?? []);
-        lastSyncedElementsHashRef.current = JSON.stringify(cleaned);
-        applyScene(message.elements, { recenter: isFreshStarter });
-      }
-      if (message.type === "whiteboard:viewport")
-        applyWhiteboardViewportCommand(message);
-      if (message.type === "error") {
-        setError(message.message);
-        if (/agent/i.test(message.message)) setAgentError(true);
-        else setSttError(true);
-      }
-      if (message.type === "queue:stats") {
-        setQueueStats({
-          pending: message.pending ?? 0,
-          buffered: message.buffered ?? 0,
-          running: !!message.running,
-          paused: !!message.paused,
-          avgTurnMs: message.avgTurnMs ?? 0,
-          ageMs: message.ageMs ?? 0,
-          estimatedCatchupMs: message.estimatedCatchupMs ?? 0,
-        });
-      }
-      if (message.type === "capture:paused") {
-        setCapturePaused(!!message.paused);
-      }
-      if (message.type === "agent:question") {
-        setPendingQuestion({
-          id: message.id,
-          question: message.question,
-          options: Array.isArray(message.options) ? message.options : [],
-          askedAt: message.askedAt,
-        });
-      }
-      if (message.type === "agent:question-resolved") {
-        setPendingQuestion((cur) => (cur && cur.id === message.id ? null : cur));
-      }
-      if (message.type === "mermaid:render") {
-        // Render Mermaid → Excalidraw elements, then inject into the live
-        // scene. The next handleExcalidrawChange will sync them back to the
-        // server so subsequent agent turns see the new shapes.
-        handleMermaidRender(message).catch((err) => {
-          console.error("Mermaid render failed:", err);
-          setError(`Mermaid render failed: ${err.message}`);
-        });
-      }
-      if (message.type === "agent:zone") {
-        const z = message.zone;
-        if (z === "sketches" || z === "structured" || z === "notes") {
-          setActiveZone(z);
+        if (message.type === "whiteboard:update") {
+          // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
+          const isFreshStarter =
+            Array.isArray(message.elements) &&
+            message.elements.length <= STARTER_ELEMENTS.length + 1;
+          const cleaned = nativeElementsToSkeletonForSync(message.elements ?? []);
+          lastSyncedElementsHashRef.current = JSON.stringify(cleaned);
+          applyScene(message.elements, { recenter: isFreshStarter });
         }
-      }
-      // v0.12.0: agent thinking status — tool:start fires when the agent
-      // begins executing a tool. Surface a friendly description.
-      if (message.type === "tool:start" || message.type === "agent:event") {
-        const toolName = message.tool || message.name;
-        if (toolName) {
-          const friendly = {
-            whiteboard_apply: "Editing the canvas",
-            whiteboard_overwrite: "Rebuilding the canvas",
-            render_mermaid: "Rendering Mermaid diagram",
-            ask_user_question: "Asking a clarifying question",
-            declare_zone: "Switching canvas zone",
-          }[toolName] || `Running ${toolName}`;
-          setAgentThinking(friendly);
-          setTimeout(() => setAgentThinking((cur) => cur === friendly ? "" : cur), 3500);
+        if (message.type === "whiteboard:viewport")
+          applyWhiteboardViewportCommand(message);
+        if (message.type === "error") {
+          setError(message.message);
+          if (/agent/i.test(message.message)) setAgentError(true);
+          else setSttError(true);
         }
-      }
-      if (message.type === "agent:status" && message.status === "idle") {
-        setAgentThinking("");
-      }
-      // v0.12.0: surface useful WS-side events as toasts
-      if (message.type === "agent:interrupted") {
-        showToast("Agent interrupted", { variant: "warn" });
-      }
-      if (message.type === "agent:undone") {
-        showToast("Agent turn reverted", { variant: "info" });
-      }
-      if (message.type === "pin:changed") {
-        if (message.pinned === true) showToast(`Pinned ${message.id ? "1 element" : ""}`, { variant: "success" });
-        if (message.pinned === false && message.id) showToast("Unpinned", { variant: "info" });
-        if (message.id === null && Array.isArray(message.all) && message.all.length === 0) showToast("All pins cleared", { variant: "info" });
-      }
-      if (message.type === "nudge:applied") {
-        showToast(`Nudge sent: "${(message.text || "").slice(0, 40)}${(message.text || "").length > 40 ? "..." : ""}"`, { variant: "success" });
-      }
-      if (message.type === "stt:dropped") {
-        // Quiet, but log to console so dev can see what got filtered
-        console.log(`[smart-stt] dropped (${message.reason}): ${message.text}`);
-      }
+        if (message.type === "queue:stats") {
+          setQueueStats({
+            pending: message.pending ?? 0,
+            buffered: message.buffered ?? 0,
+            running: !!message.running,
+            paused: !!message.paused,
+            avgTurnMs: message.avgTurnMs ?? 0,
+            ageMs: message.ageMs ?? 0,
+            estimatedCatchupMs: message.estimatedCatchupMs ?? 0,
+          });
+        }
+        if (message.type === "capture:paused") {
+          setCapturePaused(!!message.paused);
+        }
+        if (message.type === "agent:question") {
+          setPendingQuestion({
+            id: message.id,
+            question: message.question,
+            options: Array.isArray(message.options) ? message.options : [],
+            askedAt: message.askedAt,
+          });
+        }
+        if (message.type === "agent:answer") {
+          setAskAnswer({
+            question: message.question,
+            answer: message.answer,
+            sources: Array.isArray(message.sources) ? message.sources : [],
+            model: message.model,
+          });
+          setAskError("");
+        }
+        if (message.type === "agent:question-resolved") {
+          setPendingQuestion((cur) => (cur && cur.id === message.id ? null : cur));
+        }
+        if (message.type === "mermaid:render") {
+          // Render Mermaid → Excalidraw elements, then inject into the live
+          // scene. The next handleExcalidrawChange will sync them back to the
+          // server so subsequent agent turns see the new shapes.
+          handleMermaidRender(message).catch((err) => {
+            console.error("Mermaid render failed:", err);
+            setError(`Mermaid render failed: ${err.message}`);
+          });
+        }
+        if (message.type === "agent:zone") {
+          const z = message.zone;
+          if (z === "sketches" || z === "structured" || z === "notes") {
+            setActiveZone(z);
+          }
+        }
+        // v0.12.0: agent thinking status — tool:start fires when the agent
+        // begins executing a tool. Surface a friendly description.
+        if (message.type === "tool:start" || message.type === "agent:event") {
+          const toolName = message.tool || message.name;
+          if (toolName) {
+            const friendly = {
+              whiteboard_apply: "Editing the canvas",
+              whiteboard_overwrite: "Rebuilding the canvas",
+              render_mermaid: "Rendering Mermaid diagram",
+              ask_user_question: "Asking a clarifying question",
+              declare_zone: "Switching canvas zone",
+            }[toolName] || `Running ${toolName}`;
+            setAgentThinking(friendly);
+            setTimeout(() => setAgentThinking((cur) => cur === friendly ? "" : cur), 3500);
+          }
+        }
+        if (message.type === "agent:status" && message.status === "idle") {
+          setAgentThinking("");
+        }
+        // v0.12.0: surface useful WS-side events as toasts
+        if (message.type === "agent:interrupted") {
+          showToast("Agent interrupted", { variant: "warn" });
+        }
+        if (message.type === "agent:undone") {
+          showToast("Agent turn reverted", { variant: "info" });
+        }
+        if (message.type === "pin:changed") {
+          if (message.pinned === true) showToast(`Pinned ${message.id ? "1 element" : ""}`, { variant: "success" });
+          if (message.pinned === false && message.id) showToast("Unpinned", { variant: "info" });
+          if (message.id === null && Array.isArray(message.all) && message.all.length === 0) showToast("All pins cleared", { variant: "info" });
+        }
+        if (message.type === "nudge:applied") {
+          nudgeNonceRef.current += 1;
+          setNudgeSignal({
+            status: "applied",
+            text: message.text || "",
+            nonce: nudgeNonceRef.current,
+          });
+        }
+        if (message.type === "nudge:failed") {
+          nudgeNonceRef.current += 1;
+          setNudgeSignal({
+            status: "failed",
+            reason: message.reason || "",
+            nonce: nudgeNonceRef.current,
+          });
+        }
+        if (message.type === "stt:dropped") {
+          // Quiet, but log to console so dev can see what got filtered
+          console.log(`[smart-stt] dropped (${message.reason}): ${message.text}`);
+        }
+      },
+      onClose: () => {
+        setListening(false);
+        setStarting(false);
+        setAgentStatus("idle");
+      },
+      onError: () => {
+        setError("Lost connection to the server.");
+      },
     });
-
-    ws.addEventListener("close", () => {
-      setListening(false);
-      setStarting(false);
-      setAgentStatus("idle");
-    });
-
-    ws.addEventListener("error", () => {
-      setError("Lost connection to the server.");
-    });
+    wsRef.current = wsClient;
 
     return () => {
-      ws.close();
+      wsClient.close();
       wsRef.current = null;
     };
   }, []);
@@ -1024,8 +1068,7 @@ function App() {
   }, [api]);
 
   React.useEffect(() => {
-    fetch("/api/config")
-      .then((res) => res.json())
+    apiGetConfig()
       .then((config) => {
         setTranscriptionEngine(config.transcriptionEngine);
         if (config.settings) setSettings(config.settings);
@@ -1035,13 +1078,7 @@ function App() {
 
   async function saveSettings(patch) {
     setError("");
-    const res = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || "Failed to save settings");
+    const body = await apiSaveSettings(patch);
     setSettings(body.settings);
     setTranscriptionEngine(body.transcriptionEngine);
     setSttError(false);
@@ -1051,7 +1088,7 @@ function App() {
   async function cancelWarmup() {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "warmup:cancel" }));
+      ws.send({ type: "warmup:cancel" });
     }
   }
 
@@ -1075,35 +1112,27 @@ function App() {
     setSttError(false);
     setStarting(true);
 
-    let media = null;
     let audio = null;
     try {
-      const audioConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      };
-      if (mic.deviceId) audioConstraints.deviceId = { exact: mic.deviceId };
-      media = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-      });
-
       const audioSessionId = crypto.randomUUID();
-      ws.send(JSON.stringify({ type: "audio:start", sessionId: audioSessionId }));
-      audio = await createAudioStreamer(media, (audioBase64) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "audio", sessionId: audioSessionId, audio: audioBase64 }));
-        }
+      ws.send({ type: "audio:start", sessionId: audioSessionId });
+      audio = await startMicCapture({
+        deviceId: mic.deviceId,
+        onChunk: (audioBase64) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send({ type: "audio", sessionId: audioSessionId, audio: audioBase64 });
+          }
+        },
       });
       setAnalyser(audio.analyser);
-      audioSessionRef.current = { media, audio, id: audioSessionId };
+      audioSessionRef.current = { media: audio.media, audio, id: audioSessionId };
       setListening(true);
       setStarting(false);
     } catch (err) {
       setError(err.message);
       setMicError(true);
       setStarting(false);
-      media?.getTracks().forEach((track) => track.stop());
+      audio?.media?.getTracks().forEach((track) => track.stop());
       await audio?.close();
     }
   }
@@ -1113,7 +1142,7 @@ function App() {
     audioSessionRef.current = null;
     if (!session) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "stop", sessionId: session.id }));
+      wsRef.current.send({ type: "stop", sessionId: session.id });
     }
     session.media.getTracks().forEach((track) => track.stop());
     await session.audio.close();
@@ -1137,6 +1166,8 @@ function App() {
       return;
     }
     setError("");
+    setEndedSession(false);
+    sessionStartedAtRef.current = Date.now();
     setPresoStarting(true);
     try {
       await flushAgentInstructionsSave();
@@ -1165,18 +1196,10 @@ function App() {
         );
       }
 
-      const res = await fetch("/api/preso/start", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          stagingElements: stagingSkeleton,
-          stagingScreenshot,
-        }),
+      await apiStartSession({
+        stagingElements: stagingSkeleton,
+        stagingScreenshot,
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Start preso failed (${res.status})`);
-      }
       // Server broadcasts mode=live and whiteboard:update; the WS handler swaps the canvas.
     } catch (err) {
       setError(err.message);
@@ -1189,8 +1212,7 @@ function App() {
     setError("");
     if (listening) await stopListening();
     try {
-      const res = await fetch("/api/preso/back-to-staging", { method: "POST" });
-      if (!res.ok) throw new Error(`Back to staging failed (${res.status})`);
+      await apiBackToSetup();
       // Server broadcasts mode=staging; the WS handler restores the staged scene.
     } catch (err) {
       setError(err.message);
@@ -1228,75 +1250,13 @@ function App() {
         clearTimeout(captionTimerRef.current);
         setCaptionText("");
         setTranscriptHistory([]);
-        const res = await fetch("/api/session/reset", { method: "POST" });
-        if (!res.ok) throw new Error(`Reset failed (${res.status})`);
+        await apiResetSession();
       }
     } catch (err) {
       setError(err.message);
     } finally {
       setResetting(false);
     }
-  }
-
-  function applyScene(elements, { recenter = false } = {}) {
-    const excalidrawAPI = apiRef.current;
-    if (!excalidrawAPI || !Array.isArray(elements)) return;
-    const looksNative =
-      elements.length > 0 &&
-      elements[0] &&
-      typeof elements[0].versionNonce === "number";
-    // CRITICAL: regenerateIds: false. Excalidraw's default is to throw away
-    // user-provided ids and assign fresh nanoids. The agent references its
-    // elements by stable ids (e.g. "openai-card") in whiteboard_viewport's
-    // focus_ids; if we let Excalidraw rewrite them, the frontend's
-    // scene.filter(el => focusIds.includes(el.id)) finds nothing and
-    // scrollToContent silently fits the full canvas instead.
-    const renderable = looksNative
-      ? elements
-      : convertToExcalidrawElements(elements, { regenerateIds: false });
-    excalidrawAPI.updateScene({
-      elements: renderable,
-      appState: { viewBackgroundColor: "#fffdf8" },
-    });
-    if (recenter && renderable.length > 0) {
-      // Defer so updateScene's commit is flushed before scrollToContent measures bounds.
-      requestAnimationFrame(() =>
-        excalidrawAPI.scrollToContent(undefined, { animate: false }),
-      );
-    }
-    scheduleWhiteboardScreenshot();
-  }
-
-  function applyWhiteboardViewportCommand(command) {
-    const excalidrawAPI = apiRef.current;
-    if (!excalidrawAPI) return;
-
-    const action = command.action;
-    if (action === "scroll_to_content") {
-      const focusIds = Array.isArray(command.focus_ids)
-        ? command.focus_ids
-        : null;
-      let target;
-      if (focusIds && focusIds.length > 0) {
-        const scene = excalidrawAPI.getSceneElements();
-        const matched = scene.filter((el) => focusIds.includes(el.id));
-        if (matched.length > 0) target = matched;
-      }
-      excalidrawAPI.scrollToContent(target, { animate: true });
-    }
-    if (action === "set_zoom") {
-      setWhiteboardZoom(command.zoom);
-    }
-    if (action === "zoom_in") {
-      setWhiteboardZoom(currentWhiteboardZoom() * 1.2);
-    }
-    if (action === "zoom_out") {
-      setWhiteboardZoom(currentWhiteboardZoom() / 1.2);
-    }
-    if (action === "reset_zoom") {
-      setWhiteboardZoom(1);
-    }
-    scheduleWhiteboardScreenshot();
   }
 
   function currentWhiteboardZoom() {
@@ -1320,9 +1280,7 @@ function App() {
     try {
       const dataUrl = await captureCanvasDataUrl();
       if (!dataUrl) return;
-      ws.send(
-        JSON.stringify({ type: "whiteboard:screenshot", image: dataUrl }),
-      );
+      ws.send({ type: "whiteboard:screenshot", image: dataUrl });
     } catch (error) {
       console.warn("Failed to export whiteboard screenshot:", error);
     }
@@ -1384,7 +1342,7 @@ function App() {
   return React.createElement(
     "main",
     {
-      className: `shell mode-${mode}${panelHidden ? " panel-hidden" : ""}`,
+      className: `shell mode-${mode}`,
       "data-panel-theme": uiPrefs.panelTheme || "dark",
       style: worldStyle,
       ref: shellRef,
@@ -1392,46 +1350,102 @@ function App() {
     React.createElement(
       "section",
       { className: "canvas-wrap", ref: canvasWrapRef },
-      // Onboarding ribbon (first-launch only; dismissable).
-      isLive && uiPrefs.onboarding
-        ? React.createElement(OnboardingRibbon, {
-            onDismiss: () => patchUiPref("onboarding", false),
-            key: "ob",
+      // Setup screen (redesign). Overlays the full-bleed canvas while in the
+      // pre-session "setup" phase, replacing the old staging side panel.
+      phase === "setup"
+        ? React.createElement(SetupScreen, {
+            key: "setup-screen",
+            excalidrawApi: api,
+            onStarted: startPreso,
+            wsClient: wsRef.current,
+            warmupState,
+            settings,
+            onSaveSettings: saveSettings,
+            agentInstructions,
+            onAgentInstructionsChange: handleAgentInstructionsChange,
+            mic,
+            onMicChange: (next) => {
+              setMic(next);
+              saveStoredMic(next);
+            },
+            uiPrefs,
+            onPatchUiPref: patchUiPref,
+            starting: presoStarting,
           })
         : null,
-      // Canvas palette swatch row (PRESO only, if enabled).
-      isLive && uiPrefs.paletteRow
-        ? React.createElement(PaletteRow, {
-            active: uiPrefs.activePalette,
-            onChange: (v) => patchUiPref("activePalette", v),
-            shift: uiPrefs.onboarding,
-            key: "pr",
+      // Listening / Paused halo (redesign). Overlays the full-bleed canvas with
+      // the top status strip, status drawer, question card, caption pill and
+      // steer bar. Replaces the old live-mode side panel + canvas floaters.
+      phase === "listening" || phase === "paused"
+        ? React.createElement(ListeningScreen, {
+            key: "listening-screen",
+            paused: phase === "paused",
+            listening,
+            agentStatus,
+            agentThinking,
+            activeZone,
+            cost,
+            agentLabel: settings ? agentModelLabel(settings) : "Agent",
+            transcriptionProvider: settings?.transcription?.provider ?? "moonshine",
+            turnCount: transcriptHistory.filter((t) => t.status === "completed").length,
+            captionText,
+            captionsOn: uiPrefs.captionsOn,
+            onToggleCaptions: (v) => patchUiPref("captionsOn", v),
+            question: pendingQuestion,
+            onAnswerQuestion: answerPendingQuestion,
+            onSkipQuestion: dismissPendingQuestion,
+            onPauseResume: handlePauseToggle,
+            onUndo: handleUndoTurn,
+            onInterrupt: handleInterrupt,
+            onPinSelection: pinSelection,
+            onClearPins: clearAllPins,
+            onEnd: endToReview,
+            sayText,
+            saySending,
+            onSayTextChange: setSayText,
+            onSendTypedTurn: sendTypedTurn,
+            askValue: askText,
+            askBusy,
+            askAnswer,
+            askError,
+            onAskValueChange: setAskText,
+            onAsk: askBoard,
+            onDismissAnswer: () => setAskAnswer(null),
+            // "Put on board" routes the answer through the ordinary typed-turn
+            // path, so the drawing agent renders it the same way it renders
+            // anything else somebody says.
+            onPutAnswerOnBoard: (text) => {
+              sendTypedTurn(text);
+              setAskAnswer(null);
+            },
+            nudgeSignal,
+            error,
           })
         : null,
-      // Caption mode FAB (PRESO only).
-      isLive
-        ? React.createElement(CaptionFab, {
-            mode: uiPrefs.captionMode,
-            onChange: (v) => patchUiPref("captionMode", v),
-            shift: uiPrefs.onboarding,
-            key: "cf",
+      // Review is a client-only phase (End pressed). The canvas stays visible
+      // and editable — the server's state.mode is still "live", so manual edits
+      // keep syncing. The ReviewScreen calls POST /api/session/review on mount.
+      phase === "review"
+        ? React.createElement(ReviewScreen, {
+            key: "review-screen",
+            excalidrawApi: api,
+            cost,
+            turnCount: transcriptHistory.filter((t) => t.status === "completed").length,
+            sessionStartedAt: sessionStartedAtRef.current,
+            onExport: exportCanvas,
+            onNewSession: newSessionFromReview,
+            askValue: askText,
+            askBusy,
+            askAnswer,
+            askError,
+            onAskValueChange: setAskText,
+            onAsk: askBoard,
+            onDismissAnswer: () => setAskAnswer(null),
+            onPutAnswerOnBoard: (text) => {
+              sendTypedTurn(text);
+              setAskAnswer(null);
+            },
           })
-        : null,
-      // v0.7.0: Floating zone-of-the-moment chip (PRESO only).
-      isLive
-        ? React.createElement(ZoneChip, {
-            zone: activeZone,
-            key: "zone",
-          })
-        : null,
-      // v0.12.0: Agent thinking status text (floats near zone chip)
-      isLive && agentThinking
-        ? React.createElement(
-            "div",
-            { className: "agent-thinking", key: "agent-thinking" },
-            React.createElement("span", { className: "at-dot" }),
-            React.createElement("span", null, agentThinking, "…"),
-          )
         : null,
       // v0.12.0: Toast stack. Bottom-right of the canvas.
       toasts.length > 0
@@ -1451,59 +1465,6 @@ function App() {
             ),
           )
         : null,
-      // v0.9.0: Resume last session toast (STAGING only).
-      !isLive && resumeOffer
-        ? React.createElement(
-            "div",
-            { className: "resume-toast", key: "resume-toast" },
-            React.createElement(
-              "div",
-              { className: "resume-text" },
-              React.createElement("b", null, "Resume last session?"),
-              ` Found a ${resumeOffer.count}-element snapshot from ${resumeOffer.ageMin} minutes ago.`,
-            ),
-            React.createElement(
-              "div",
-              { className: "resume-actions" },
-              React.createElement(
-                "button",
-                {
-                  type: "button",
-                  className: "resume-yes",
-                  onClick: resumeLastSession,
-                },
-                "Resume",
-              ),
-              React.createElement(
-                "button",
-                {
-                  type: "button",
-                  className: "resume-no",
-                  onClick: discardResumeOffer,
-                },
-                "Discard",
-              ),
-            ),
-          )
-        : null,
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "panel-toggle",
-          onClick: () => setPanelHidden((v) => !v),
-          title: panelHidden ? "Show settings panel" : "Hide settings panel",
-          "aria-label": panelHidden
-            ? "Show settings panel"
-            : "Hide settings panel",
-          "aria-expanded": !panelHidden,
-        },
-        React.createElement(
-          "span",
-          { className: "panel-toggle-icon", "aria-hidden": "true" },
-          panelHidden ? "‹" : "›",
-        ),
-      ),
       React.createElement(Excalidraw, {
         excalidrawAPI: setApi,
         // v0.13.0: sync Excalidraw's appearance with the Aegis panel theme.
@@ -1560,943 +1521,14 @@ function App() {
             ),
           )
         : null,
-      isLive && pendingQuestion
-        ? React.createElement(QuestionCard, {
-            question: pendingQuestion,
-            onAnswer: answerPendingQuestion,
-            onDismiss: dismissPendingQuestion,
-            position: uiPrefs.questionPos,
-            key: pendingQuestion.id,
-          })
-        : null,
-      // Working-mode caption pill: small, top-right (when captions on + working).
-      isLive && uiPrefs.captionsOn && uiPrefs.captionMode === "working" && captionText
-        ? React.createElement(
-            "div",
-            { className: "caption-work", role: "status", "aria-live": "polite" },
-            React.createElement("span", { className: "live-dot" }),
-            React.createElement("span", { className: "ct" }, truncateCaption(captionText)),
-          )
-        : null,
-      // Presentation-mode caption pill (default bottom-center, big).
-      uiPrefs.captionsOn && uiPrefs.captionMode === "presentation"
-        ? React.createElement(
-            "div",
-            {
-              className: `stage-overlay ${(captionText || listening) && isLive ? "visible" : ""}`,
-              "aria-hidden": "true",
-            },
-            captionText
-              ? React.createElement(
-                  "div",
-                  {
-                    className: "caption-pill",
-                    role: "status",
-                    "aria-live": "polite",
-                  },
-                  truncateCaption(captionText),
-                )
-              : null,
-            React.createElement(Waveform, { analyser, active: listening }),
-          )
-        : null,
-    ),
-    React.createElement(
-      "aside",
-      { className: "panel" },
-      React.createElement(
-        "div",
-        { className: "brand" },
-        React.createElement(
-          "div",
-          { className: "brand-row" },
-          React.createElement(
-            "h1",
-            null,
-            "Champ",
-            React.createElement("span", { className: "preso" }, "Preso"),
-          ),
-        ),
-        // v0.7.0 Session Mode tabs row (always visible).
-        React.createElement(
-          "div",
-          { className: "session-modes" },
-          ["strategy", "presentation", "cothinking"].map((m) =>
-            React.createElement(
-              "button",
-              {
-                key: m,
-                type: "button",
-                className: `sm-tab ${uiPrefs.sessionMode === m ? "active" : ""}`,
-                onClick: () => patchUiPref("sessionMode", m),
-                title:
-                  m === "strategy"
-                    ? "Solo strategy. Agent listens longer, asks more, commits to fewer outputs."
-                    : m === "presentation"
-                      ? "Live presentation. Agent draws aggressively, polished output, captions on."
-                      : "Co-thinking. Multi-speaker friendly, tracks who said what, balances diagrams + notes.",
-              },
-              React.createElement(
-                "span",
-                { className: "sm-tab-label" },
-                m === "strategy" ? "Strategy" : m === "presentation" ? "Present" : "Co-think",
-              ),
-            ),
-          ),
-          React.createElement(
-            "div",
-            {
-              className: `mode-toggle mode-toggle-${mode}`,
-              role: "group",
-              "aria-label": "Mode",
-            },
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: `mode-toggle-option ${mode === "staging" ? "active" : ""}`,
-                onClick: () => {
-                  if (mode !== "staging") backToStaging();
-                },
-                disabled: presoStarting,
-                title: "Staging mode",
-                "aria-pressed": mode === "staging",
-              },
-              "Staging",
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: `mode-toggle-option ${mode === "live" ? "active" : ""}`,
-                onClick: () => {
-                  if (mode !== "live") startPreso();
-                },
-                disabled: presoStarting,
-                title: presoStarting ? "Starting..." : "Preso mode",
-                "aria-pressed": mode === "live",
-              },
-              presoStarting && mode === "staging" ? "..." : "Preso",
-            ),
-          ),
-        ),
-        React.createElement(
-          "p",
-          null,
-          mode === "staging"
-            ? "Drop keywords, diagrams, or images on the canvas. They will be used as reference during the preso."
-            : "Just talk through your ideas. Let the agent whiteboard for you.",
-        ),
-      ),
-      React.createElement(
-        "div",
-        { className: "controls" },
-        mode === "staging"
-          ? React.createElement(
-              "button",
-              {
-                className: "start-preso",
-                onClick: startPreso,
-                disabled: presoStarting,
-              },
-              presoStarting ? "Starting..." : "Start Preso →",
-            )
-          : null,
-        isLive
-          ? React.createElement(
-              "div",
-              { className: "listen-controls" },
-              React.createElement(
-                "div",
-                { className: "listen-row" },
-                React.createElement(
-                  "button",
-                  {
-                    className: `record-toggle ${listening ? "recording" : ""}`,
-                    onClick: toggleListening,
-                    disabled:
-                      starting ||
-                      (warmupState.state === "running" && !listening),
-                    title:
-                      warmupState.state === "running"
-                        ? "Waiting for prompt cache to warm up"
-                        : warmupState.state === "exhausted"
-                          ? "Cache didn't fully prime; first turn may be slower"
-                          : undefined,
-                  },
-                  React.createElement(
-                    "span",
-                    { className: "record-icon" },
-                    listening ? "■" : "●",
-                  ),
-                  " ",
-                  listening
-                    ? "Stop"
-                    : starting
-                      ? "Starting..."
-                      : warmupState.state === "running"
-                        ? `Warming up... (${warmupState.attempt} / ${warmupState.maxAttempts})`
-                        : "Start Talking",
-                ),
-                React.createElement(
-                  "button",
-                  {
-                    className: "fullscreen-toggle",
-                    onClick: toggleFullscreen,
-                    title: isFullscreen
-                      ? "Exit fullscreen (Esc)"
-                      : "Fullscreen for screen sharing",
-                    "aria-label": isFullscreen
-                      ? "Exit fullscreen"
-                      : "Enter fullscreen",
-                  },
-                  fullscreenIcon(isFullscreen),
-                ),
-              ),
-              warmupState.state === "running" && !listening
-                ? React.createElement(
-                    "button",
-                    {
-                      className: "warmup-skip",
-                      onClick: startAnyway,
-                      title:
-                        "Skip warmup and start listening now. The first turn may be slower.",
-                    },
-                    "Start Anyway →",
-                  )
-                : null,
-              warmupState.state === "exhausted" && !listening
-                ? React.createElement(
-                    "div",
-                    { className: "warmup-warning" },
-                    "Cache didn't fully prime. First turn may be slower.",
-                  )
-                : null,
-            )
-          : null,
-        React.createElement(
-          "button",
-          {
-            className: `reset-session ${resetConfirming ? "confirming" : ""}`,
-            onClick: handleResetClick,
-            disabled: resetting,
-            title:
-              mode === "staging"
-                ? "Clear the staging area"
-                : "Clear the whiteboard and start a new session",
-          },
-          resetting
-            ? "Resetting..."
-            : resetConfirming
-              ? "Click again to reset"
-              : mode === "staging"
-                ? "Reset Staging"
-                : "Reset Session",
-        ),
-      ),
-      mode === "live"
-        ? (function () {
-            const backlog = queueStats && (queueStats.pending + queueStats.buffered > 0 || queueStats.running)
-              ? React.createElement(BacklogPill, { stats: queueStats, key: "backlog" })
-              : queueStats
-                ? React.createElement(
-                    "div",
-                    { className: "backlog-pill caught-up", key: "backlog" },
-                    React.createElement("span", { className: "backlog-dot" }),
-                    React.createElement("span", null, "Caught up"),
-                  )
-                : null;
-            const pause = React.createElement(
-              "button",
-              {
-                key: "pause",
-                className: `pause-capture ${capturePaused ? "paused" : ""}`,
-                onClick: handlePauseToggle,
-                title: capturePaused
-                  ? "Resume capturing your speech to the agent"
-                  : "Stop sending your speech to the agent without ending the session",
-              },
-              capturePaused ? "▶ Resume capture" : "❚❚ Pause capture",
-            );
-            const children = uiPrefs.backlogPosition === "above"
-              ? [backlog, pause]
-              : [pause, backlog];
-            return React.createElement(
-              "div",
-              { className: "live-controls", key: "live-controls" },
-              ...children.filter(Boolean),
-            );
-          })()
-        : null,
-      mode === "live"
-        ? React.createElement(
-            "div",
-            { className: "live-action-row", key: "live-action-row" },
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "interrupt-btn",
-                onClick: handleInterrupt,
-                title: "Interrupt the agent (Cmd+I)",
-                "aria-label": "Interrupt",
-              },
-              React.createElement("span", { className: "btn-icon" }, "⊘"),
-              React.createElement("span", { className: "btn-label" }, "Interrupt"),
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "undo-btn",
-                onClick: handleUndoTurn,
-                title: "Undo last agent turn (Cmd+Z)",
-                "aria-label": "Undo turn",
-              },
-              React.createElement("span", { className: "btn-icon" }, "↶"),
-              React.createElement("span", { className: "btn-label" }, "Undo"),
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "pin-btn",
-                onClick: pinSelection,
-                title: "Pin selection (Cmd+Shift+P) — agent won't touch pinned shapes",
-                "aria-label": "Pin selection",
-              },
-              React.createElement("span", { className: "btn-icon" }, "📌"),
-              React.createElement("span", { className: "btn-label" }, "Pin"),
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "pin-btn",
-                onClick: clearAllPins,
-                title: "Clear all pins",
-                "aria-label": "Clear all pins",
-              },
-              React.createElement("span", { className: "btn-icon" }, "✕"),
-              React.createElement("span", { className: "btn-label" }, "Unpin all"),
-            ),
-          )
-        : null,
-      mode === "live"
-        ? React.createElement(ExportMenu, {
-            onExport: exportCanvas,
-            key: "export-menu",
-          })
-        : null,
-      mode === "live"
-        ? React.createElement(QuickActions, { key: "quick-actions" })
-        : null,
-      mode === "live"
-        ? React.createElement(NudgeBar, { key: "nudge-bar" })
-        : null,
-      // Status card. In PRESO with statusDensity="collapse" it renders as
-      // a one-line button that expands on click. Otherwise full three rows.
-      mode === "live" && uiPrefs.statusDensity === "collapse" && !statusMiniOpen
-        ? React.createElement(
-            "button",
-            {
-              type: "button",
-              className: "status-mini",
-              onClick: () => setStatusMiniOpen(true),
-              title: "Expand status",
-            },
-            React.createElement("span", { className: "mini-dot" }),
-            React.createElement("span", { className: "mini-lbl" }, "Agent"),
-            React.createElement(
-              "span",
-              { className: "mini-model" },
-              (settings?.agent && agentModelLabel(settings)) || "agent",
-            ),
-            React.createElement("span", { className: "mini-chev" }, "▾"),
-          )
-        : React.createElement(
-        "div",
-        { className: "status-card" },
-        statusRow({
-          dotState: micState,
-          label: "Mic",
-          value: micLabel,
-          expanded: expandedRow === "mic",
-          onToggle: () => setExpandedRow(expandedRow === "mic" ? null : "mic"),
-          editor: React.createElement(MicEditor, {
-            currentDeviceId: mic.deviceId,
-            onSave: (next) => {
-              setMic(next);
-              saveStoredMic(next);
-              setExpandedRow(null);
-            },
-            onCancel: () => setExpandedRow(null),
-          }),
-        }),
-        statusRow({
-          dotState: sttState,
-          label: "Voice",
-          value: sttLabel,
-          expanded: expandedRow === "stt",
-          onToggle: () => setExpandedRow(expandedRow === "stt" ? null : "stt"),
-          editor: settings
-            ? React.createElement(TranscriptionEditor, {
-                settings,
-                onSave: async (patch) => {
-                  await saveSettings(patch);
-                  setExpandedRow(null);
-                },
-                onCancel: () => setExpandedRow(null),
-              })
-            : null,
-        }),
-        statusRow({
-          dotState: agentState,
-          label: "Agent",
-          value: agentLabel,
-          expanded: expandedRow === "agent",
-          onToggle: () =>
-            setExpandedRow(expandedRow === "agent" ? null : "agent"),
-          editor: settings
-            ? React.createElement(AgentEditor, {
-                settings,
-                onSave: async (patch) => {
-                  await saveSettings(patch);
-                  setExpandedRow(null);
-                },
-                onCancel: () => setExpandedRow(null),
-              })
-            : null,
-        }),
-      ),
-      isLive && cost ? React.createElement(CostCard, { cost }) : null,
-      isLive
-        ? React.createElement(
-            "div",
-            { className: "transcript-history-card", key: "transcript-history" },
-            React.createElement(
-              "div",
-              { className: "th-header" },
-              React.createElement("span", { className: "th-title" }, "Live Transcript History"),
-              transcriptHistory.length > 0
-                ? React.createElement(
-                    "button",
-                    {
-                      type: "button",
-                      className: "th-clear",
-                      onClick: () => setTranscriptHistory([]),
-                      title: "Clear history list",
-                    },
-                    "Clear"
-                  )
-                : null
-            ),
-            React.createElement(
-              "form",
-              {
-                className: "th-say",
-                onSubmit: (e) => {
-                  e.preventDefault();
-                  sendTypedTurn(sayText);
-                },
-              },
-              React.createElement("input", {
-                className: "th-say-input",
-                type: "text",
-                value: sayText,
-                placeholder: "Type a point to add to the board…",
-                disabled: saySending,
-                "aria-label": "Type a point to add to the board",
-                onChange: (e) => setSayText(e.target.value),
-              }),
-              React.createElement(
-                "button",
-                {
-                  type: "submit",
-                  className: "th-say-send",
-                  disabled: saySending || !sayText.trim(),
-                  title: "Add this to the board",
-                },
-                saySending ? "…" : "Add"
-              )
-            ),
-            React.createElement(
-              "div",
-              { className: "th-list" },
-              transcriptHistory.length === 0
-                ? React.createElement(
-                    "div",
-                    { className: "th-empty" },
-                    "No spoken turns processed yet. Start talking to see history."
-                  )
-                : React.createElement(
-                    "ul",
-                    null,
-                    ...transcriptHistory.map((item) => {
-                      let statusIcon = "⚪";
-                      let statusClass = "queued";
-                      if (item.status === "processing") {
-                        statusIcon = "⏳";
-                        statusClass = "processing";
-                      } else if (item.status === "completed") {
-                        statusIcon = "✅";
-                        statusClass = "completed";
-                      } else if (item.status === "failed") {
-                        statusIcon = "❌";
-                        statusClass = "failed";
-                      }
-                      return React.createElement(
-                        "li",
-                        { key: item.id, className: `th-item ${statusClass}` },
-                        React.createElement(
-                          "div",
-                          { className: "th-item-header" },
-                          React.createElement(
-                            "span",
-                            { className: "th-status-badge", title: item.status },
-                            statusIcon
-                          ),
-                          React.createElement(
-                            "span",
-                            { className: "th-time" },
-                            new Date(item.timestamp).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })
-                          ),
-                          item.durationMs != null
-                            ? React.createElement(
-                                "span",
-                                { className: "th-duration", title: "Time from speech to edit" },
-                                formatDuration(item.durationMs)
-                              )
-                            : null
-                        ),
-                        React.createElement("div", { className: "th-text" }, item.text),
-                        item.error
-                          ? React.createElement(
-                              "div",
-                              { className: "th-error-msg" },
-                              item.error
-                            )
-                          : null
-                      );
-                    }),
-                    React.createElement("div", { ref: transcriptHistoryEndRef })
-                  )
-            )
-          )
-        : null,
-      mode === "staging"
-        ? React.createElement(
-            "div",
-            { className: "agent-instructions" },
-            React.createElement(
-              "label",
-              {
-                className: "agent-instructions-label",
-                htmlFor: "agent-instructions-input",
-              },
-              "Agent instructions",
-            ),
-            React.createElement("textarea", {
-              id: "agent-instructions-input",
-              className: "agent-instructions-input",
-              value: agentInstructions,
-              onChange: (e) => handleAgentInstructionsChange(e.target.value),
-              placeholder:
-                "Optional. Tell the agent your preferences - e.g. 'Use a tight 4-color palette', 'Prefer drawings over text', 'Be funny'.",
-              rows: 4,
-              spellCheck: true,
-            }),
-            React.createElement(
-              "p",
-              { className: "agent-instructions-hint" },
-              "Saved automatically. Takes effect on next Start Preso.",
-            ),
-          )
-        : null,
-      mode === "staging"
-        ? React.createElement(
-            "div",
-            {
-              className: `notes-pane ${notesDragActive ? "dragging" : ""}`,
-              onDragOver: (e) => {
-                e.preventDefault();
-                if (!notesDragActive) setNotesDragActive(true);
-              },
-              onDragEnter: (e) => {
-                e.preventDefault();
-                setNotesDragActive(true);
-              },
-              onDragLeave: (e) => {
-                e.preventDefault();
-                if (e.currentTarget.contains(e.relatedTarget)) return;
-                setNotesDragActive(false);
-              },
-              onDrop: handleNotesDrop,
-            },
-            React.createElement(
-              "div",
-              { className: "notes-header" },
-              React.createElement(
-                "label",
-                {
-                  className: "notes-label",
-                  htmlFor: "notes-and-transcripts-input",
-                },
-                "Notes & Transcripts",
-              ),
-              React.createElement(
-                "div",
-                { className: "notes-meta" },
-                React.createElement(
-                  "span",
-                  { className: "notes-counter" },
-                  `${notesAndTranscripts.length.toLocaleString()} / ${NOTES_MAX_CHARS.toLocaleString()}`,
-                ),
-                notesAndTranscripts.length > 0
-                  ? React.createElement(
-                      "button",
-                      {
-                        type: "button",
-                        className: "notes-clear",
-                        onClick: clearNotesAndTranscripts,
-                        title: "Clear all notes and transcripts",
-                      },
-                      "Clear",
-                    )
-                  : null,
-              ),
-            ),
-            React.createElement("textarea", {
-              id: "notes-and-transcripts-input",
-              className: "notes-input",
-              value: notesAndTranscripts,
-              onChange: (e) => handleNotesAndTranscriptsChange(e.target.value),
-              placeholder:
-                "Drop .txt, .md, .vtt, .srt files here, or paste meeting notes, prior transcripts, briefs, or any reference material the agent should know about. The agent will read this on Start Preso and treat it as background context.",
-              rows: 8,
-              spellCheck: true,
-            }),
-            notesAttachFlash
-              ? React.createElement("div", { className: "notes-flash" }, notesAttachFlash)
-              : null,
-            React.createElement(
-              "p",
-              { className: "notes-hint" },
-              "Saved automatically. Takes effect on next Start Preso. Drop files anywhere on this panel.",
-            ),
-            notesDragActive
-              ? React.createElement(
-                  "div",
-                  { className: "notes-drop-overlay" },
-                  "Drop to attach",
-                )
-              : null,
-          )
-        : null,
-      error ? React.createElement("div", { className: "error" }, error) : null,
-      // UI Settings drawer trigger (always visible, bottom of panel above footer).
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "ui-settings-trigger",
-          onClick: () => setUiDrawerOpen((v) => !v),
-          title: "Adjust panel appearance and behavior",
-        },
-        React.createElement("span", null, uiDrawerOpen ? "▾" : "⚙"),
-        React.createElement("span", null, "UI Settings"),
-      ),
-      uiDrawerOpen
-        ? React.createElement(UISettingsPanel, {
-            prefs: uiPrefs,
-            onChange: patchUiPref,
-            onClose: () => setUiDrawerOpen(false),
-            key: "ui-settings",
-          })
-        : null,
     ),
   );
 }
 
-const CAPTION_MAX_CHARS = 70;
-
-function truncateCaption(text) {
-  if (!text || text.length <= CAPTION_MAX_CHARS) return text;
-  const tail = text.slice(-CAPTION_MAX_CHARS);
-  const space = tail.indexOf(" ");
-  return space >= 0 && space < tail.length - 1 ? tail.slice(space + 1) : tail;
-}
-
-function Waveform({ analyser, active }) {
-  const canvasRef = React.useRef(null);
-
-  React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
-
-    let raf = 0;
-    let resizeObserver;
-    let lastWidth = 0;
-    let lastHeight = 0;
-
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const width = Math.max(1, Math.floor(rect.width));
-      const height = Math.max(1, Math.floor(rect.height));
-      if (width === lastWidth && height === lastHeight) return;
-      lastWidth = width;
-      lastHeight = height;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-    };
-
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(resize);
-      resizeObserver.observe(canvas);
-    }
-    resize();
-
-    if (!analyser || !active) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return () => {
-        if (resizeObserver) resizeObserver.disconnect();
-      };
-    }
-
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.85;
-    const data = new Uint8Array(analyser.fftSize);
-
-    const draw = () => {
-      analyser.getByteTimeDomainData(data);
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-
-      const mid = h / 2;
-      const amplitude = mid * 0.85;
-
-      const gradient = ctx.createLinearGradient(0, 0, w, 0);
-      gradient.addColorStop(0, "rgba(56, 189, 248, 0)");
-      gradient.addColorStop(0.15, "rgba(56, 189, 248, 0.95)");
-      gradient.addColorStop(0.5, "rgba(168, 85, 247, 0.95)");
-      gradient.addColorStop(0.85, "rgba(56, 189, 248, 0.95)");
-      gradient.addColorStop(1, "rgba(56, 189, 248, 0)");
-
-      ctx.shadowColor = "rgba(56, 189, 248, 0.55)";
-      ctx.shadowBlur = 22 * dpr;
-      ctx.lineWidth = 2.4 * dpr;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = gradient;
-
-      ctx.beginPath();
-      const step = w / data.length;
-      for (let i = 0; i < data.length; i += 1) {
-        const v = (data[i] - 128) / 128;
-        const x = i * step;
-        const y = mid + v * amplitude;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-
-      raf = requestAnimationFrame(draw);
-    };
-
-    raf = requestAnimationFrame(draw);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      if (resizeObserver) resizeObserver.disconnect();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    };
-  }, [analyser, active]);
-
-  return React.createElement("canvas", {
-    ref: canvasRef,
-    className: "waveform-canvas",
-  });
-}
-
-function CostCard({ cost }) {
-  const agent = cost.agent ?? {};
-  const stt = cost.transcription ?? {};
-  const total = (agent.priced ? agent.cost : 0) + (stt.priced ? stt.cost : 0);
-  return React.createElement(
-    "div",
-    { className: "cost-card" },
-    React.createElement(
-      "div",
-      { className: "cost-card-header" },
-      React.createElement(
-        "span",
-        { className: "cost-card-title" },
-        "Session cost",
-      ),
-      React.createElement(
-        "span",
-        {
-          className: "cost-card-total",
-          title: "Sum of priced agent + transcription costs",
-        },
-        formatUsd(total),
-      ),
-    ),
-    React.createElement(CostRow, {
-      label: "Agent",
-      sub: costSubtitle(agent),
-      value: costValue(agent),
-      title: agentTokenTooltip(agent),
-    }),
-    React.createElement(CostRow, {
-      label: "Voice",
-      sub: costSubtitle(stt),
-      value: costValue(stt),
-      title: transcriptionTooltip(stt),
-    }),
-  );
-}
-
-function CostRow({ label, sub, value, title }) {
-  return React.createElement(
-    "div",
-    { className: "cost-row", title: title || undefined },
-    React.createElement(
-      "div",
-      { className: "cost-row-left" },
-      React.createElement("span", { className: "cost-row-label" }, label),
-      sub
-        ? React.createElement("span", { className: "cost-row-sub" }, sub)
-        : null,
-    ),
-    React.createElement("span", { className: "cost-row-value" }, value),
-  );
-}
-
-function costSubtitle(entry) {
-  if (!entry?.provider) return "";
-  if (entry.provider === "moonshine")
-    return `${entry.model ?? ""} (local)`.trim();
-  if (entry.provider === "ollama") return `${entry.model ?? ""} (local)`.trim();
-  if (entry.provider === "openrouter")
-    return `${entry.model ?? ""} (openrouter)`.trim();
-  if (entry.provider === "groq")
-    return `${entry.model ?? ""} (groq · fast)`.trim();
-  if (entry.provider === "cerebras")
-    return `${entry.model ?? ""} (cerebras · fastest)`.trim();
-  if (entry.provider === "codex")
-    return `${entry.model ?? ""} (subscription)`.trim();
-  return entry.model ?? "";
-}
-
-function costValue(entry) {
-  if (!entry?.provider) return "$0.0000";
-  if (!entry.priced) {
-    if (entry.reason === "local") return "$0.0000";
-    // Codex routes through the user's ChatGPT subscription, so there's no
-    // per-token dollar cost we can report. Show usage volume instead so the
-    // panel still surfaces "is the agent doing work?".
-    if (entry.reason === "subscription") return formatTokenCount(entry.tokens);
-    return "n/a";
-  }
-  return formatUsd(entry.cost ?? 0);
-}
-
-function formatUsd(value) {
-  if (typeof value !== "number" || !isFinite(value)) return "$0.0000";
-  if (value === 0) return "$0.0000";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(3)}`;
-}
-
-function formatTokenCount(tokens) {
-  const total =
-    (tokens?.input ?? 0) + (tokens?.output ?? 0) + (tokens?.reasoning ?? 0);
-  if (total === 0) return "0 tok";
-  if (total < 1000) return `${total} tok`;
-  if (total < 1_000_000) {
-    const k = total / 1000;
-    return `${k < 10 ? k.toFixed(1) : Math.round(k)}k tok`;
-  }
-  return `${(total / 1_000_000).toFixed(1)}M tok`;
-}
-
-function agentTokenTooltip(entry) {
-  if (!entry?.tokens) return "";
-  const t = entry.tokens;
-  const total = (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0);
-  if (total === 0) return "";
-  return `input ${t.input ?? 0} (cached ${t.cached ?? 0}) + output ${t.output ?? 0}${t.reasoning ? ` + reasoning ${t.reasoning}` : ""} tokens`;
-}
-
-function transcriptionTooltip(entry) {
-  if (!entry?.seconds) return "";
-  const seconds = entry.seconds;
-  const minutes = seconds / 60;
-  return `${minutes.toFixed(2)} minutes of audio sent`;
-}
-
-function statusRow({
-  dotState,
-  label,
-  value,
-  expanded = false,
-  onToggle,
-  editor,
-}) {
-  const clickable = Boolean(onToggle);
-  return React.createElement(
-    "div",
-    { className: `status-row-wrap ${expanded ? "expanded" : ""}` },
-    React.createElement(
-      "div",
-      {
-        className: `status-row ${clickable ? "clickable" : ""} ${expanded ? "open" : ""}`,
-        onClick: clickable ? onToggle : undefined,
-        role: clickable ? "button" : undefined,
-        tabIndex: clickable ? 0 : undefined,
-        onKeyDown: clickable
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onToggle();
-              }
-            }
-          : undefined,
-      },
-      React.createElement("span", {
-        className: `dot ${dotState}`,
-        "aria-hidden": "true",
-      }),
-      React.createElement("span", { className: "label" }, label),
-      React.createElement(
-        "span",
-        {
-          className: "value",
-          title: typeof value === "string" ? value : undefined,
-        },
-        value,
-      ),
-      clickable
-        ? React.createElement(
-            "span",
-            { className: "chevron", "aria-hidden": "true" },
-            "›",
-          )
-        : null,
-    ),
-    expanded && editor
-      ? React.createElement("div", { className: "editor" }, editor)
-      : null,
-  );
-}
+// ---------------------------------------------------------------------------
+// Retained helpers used by App() after the frontend-redesign cleanup removed
+// the legacy status-card / canvas-floater component library.
+// ---------------------------------------------------------------------------
 
 function agentModelLabel(settings) {
   const provider = settings.agent.provider;
@@ -2515,683 +1547,6 @@ function sttModelLabel(settings) {
   if (settings.transcription.provider === "moonshine")
     return settings.transcription.moonshine.model;
   return settings.transcription.openai.model;
-}
-
-function MicEditor({ currentDeviceId, onSave, onCancel }) {
-  const [devices, setDevices] = React.useState([]);
-  const [selected, setSelected] = React.useState(currentDeviceId);
-  const [needsPermission, setNeedsPermission] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [errorText, setErrorText] = React.useState("");
-
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await navigator.mediaDevices.enumerateDevices();
-        const inputs = list.filter((d) => d.kind === "audioinput");
-        if (cancelled) return;
-        setDevices(inputs);
-        setNeedsPermission(inputs.length > 0 && inputs.every((d) => !d.label));
-      } catch (err) {
-        if (!cancelled) setErrorText(err.message);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function grantPermission() {
-    setBusy(true);
-    setErrorText("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      const list = await navigator.mediaDevices.enumerateDevices();
-      const inputs = list.filter((d) => d.kind === "audioinput");
-      setDevices(inputs);
-      setNeedsPermission(false);
-    } catch (err) {
-      setErrorText(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function submit() {
-    const device = devices.find((d) => d.deviceId === selected);
-    onSave({ deviceId: selected || "", label: device?.label || "" });
-  }
-
-  return React.createElement(
-    "div",
-    { className: "editor-grid" },
-    needsPermission
-      ? React.createElement(
-          "div",
-          { className: "editor-hint" },
-          "Grant microphone access to see device names.",
-          React.createElement(
-            "button",
-            {
-              className: "secondary",
-              onClick: grantPermission,
-              disabled: busy,
-              style: { marginLeft: "8px" },
-            },
-            busy ? "..." : "Grant",
-          ),
-        )
-      : null,
-    field(
-      "Device",
-      React.createElement(
-        "select",
-        {
-          value: selected,
-          onChange: (e) => setSelected(e.target.value),
-          disabled: busy,
-        },
-        React.createElement("option", { value: "" }, "System default"),
-        devices.map((d) =>
-          React.createElement(
-            "option",
-            { key: d.deviceId, value: d.deviceId },
-            d.label || `Device ${d.deviceId.slice(0, 8)}`,
-          ),
-        ),
-      ),
-    ),
-    errorText
-      ? React.createElement("div", { className: "editor-error" }, errorText)
-      : null,
-    React.createElement(
-      "div",
-      { className: "editor-actions" },
-      React.createElement(
-        "button",
-        { className: "secondary", onClick: onCancel, disabled: busy },
-        "Cancel",
-      ),
-      React.createElement(
-        "button",
-        { onClick: submit, disabled: busy },
-        "Save",
-      ),
-    ),
-  );
-}
-
-function AgentEditor({ settings, onSave, onCancel }) {
-  const [provider, setProvider] = React.useState(settings.agent.provider);
-  const [openaiModel, setOpenaiModel] = React.useState(
-    settings.agent.openai.model,
-  );
-  const [reasoningEffort, setReasoningEffort] = React.useState(
-    settings.agent.openai.reasoningEffort,
-  );
-  const [openaiBaseURL, setOpenaiBaseURL] = React.useState(
-    settings.agent.openai.baseURL,
-  );
-  const [codexModel, setCodexModel] = React.useState(
-    settings.agent.codex.model,
-  );
-  const [ollamaModel, setOllamaModel] = React.useState(
-    settings.agent.ollama.model,
-  );
-  const [ollamaBaseURL, setOllamaBaseURL] = React.useState(
-    settings.agent.ollama.baseURL,
-  );
-  const [openrouterModel, setOpenrouterModel] = React.useState(
-    settings.agent.openrouter?.model || "anthropic/claude-3.5-sonnet",
-  );
-  const [openrouterBaseURL, setOpenrouterBaseURL] = React.useState(
-    settings.agent.openrouter?.baseURL || "https://openrouter.ai/api/v1",
-  );
-  const [groqModel, setGroqModel] = React.useState(
-    settings.agent.groq?.model || "llama-3.3-70b-versatile",
-  );
-  const [cerebrasModel, setCerebrasModel] = React.useState(
-    settings.agent.cerebras?.model || "llama-3.3-70b",
-  );
-  const [openaiKey, setOpenaiKey] = React.useState("");
-  const [openrouterKey, setOpenrouterKey] = React.useState("");
-  const [groqKey, setGroqKey] = React.useState("");
-  const [cerebrasKey, setCerebrasKey] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [errorText, setErrorText] = React.useState("");
-
-  const needsOpenAIKey =
-    provider === "openai" && !settings.hasOpenAIKey && !openaiKey;
-  const needsOpenRouterKey =
-    provider === "openrouter" && !settings.hasOpenRouterKey && !openrouterKey;
-  const needsGroqKey =
-    provider === "groq" && !settings.hasGroqKey && !groqKey;
-  const needsCerebrasKey =
-    provider === "cerebras" && !settings.hasCerebrasKey && !cerebrasKey;
-
-  async function submit() {
-    setBusy(true);
-    setErrorText("");
-    const patch = {
-      agent: {
-        provider,
-        openai: {},
-        codex: {},
-        ollama: {},
-        openrouter: {},
-        groq: {},
-        cerebras: {},
-      },
-    };
-    if (provider === "openai") {
-      patch.agent.openai.model = openaiModel;
-      patch.agent.openai.reasoningEffort = reasoningEffort;
-      patch.agent.openai.baseURL = openaiBaseURL;
-    } else if (provider === "codex") {
-      patch.agent.codex.model = codexModel;
-    } else if (provider === "openrouter") {
-      patch.agent.openrouter.model = openrouterModel;
-      patch.agent.openrouter.baseURL = openrouterBaseURL;
-    } else if (provider === "groq") {
-      patch.agent.groq.model = groqModel;
-    } else if (provider === "cerebras") {
-      patch.agent.cerebras.model = cerebrasModel;
-    } else {
-      patch.agent.ollama.model = ollamaModel;
-      patch.agent.ollama.baseURL = ollamaBaseURL;
-    }
-    const keys = {};
-    if (openaiKey) keys.openai = openaiKey;
-    if (openrouterKey) keys.openrouter = openrouterKey;
-    if (groqKey) keys.groq = groqKey;
-    if (cerebrasKey) keys.cerebras = cerebrasKey;
-    if (Object.keys(keys).length) patch.apiKeys = keys;
-    try {
-      await onSave(patch);
-    } catch (error) {
-      setErrorText(error.message);
-      setBusy(false);
-    }
-  }
-
-  return React.createElement(
-    "div",
-    { className: "editor-grid" },
-    field(
-      "Provider",
-      React.createElement(
-        "select",
-        {
-          value: provider,
-          onChange: (e) => setProvider(e.target.value),
-          disabled: busy,
-        },
-        React.createElement("option", { value: "groq" }, "Groq (fast)"),
-        React.createElement("option", { value: "cerebras" }, "Cerebras (fastest)"),
-        React.createElement("option", { value: "openrouter" }, "OpenRouter"),
-        React.createElement("option", { value: "openai" }, "OpenAI"),
-        React.createElement("option", { value: "ollama" }, "Ollama (local)"),
-        React.createElement("option", { value: "codex" }, "Codex"),
-      ),
-    ),
-    provider === "openai"
-      ? field(
-          "Model",
-          select(openaiModel, setOpenaiModel, OPENAI_AGENT_MODELS, busy),
-        )
-      : null,
-    provider === "openai"
-      ? field(
-          "Reasoning",
-          select(reasoningEffort, setReasoningEffort, REASONING_EFFORTS, busy),
-        )
-      : null,
-    provider === "codex"
-      ? field(
-          "Model",
-          select(codexModel, setCodexModel, CODEX_AGENT_MODELS, busy),
-        )
-      : null,
-    provider === "ollama"
-      ? field(
-          "Model",
-          React.createElement("input", {
-            type: "text",
-            value: ollamaModel,
-            onChange: (e) => setOllamaModel(e.target.value),
-            placeholder: "e.g. llama3.2",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "ollama"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: ollamaBaseURL,
-            onChange: (e) => setOllamaBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "groq"
-      ? field("Model", select(groqModel, setGroqModel, GROQ_AGENT_MODELS, busy))
-      : null,
-    provider === "cerebras"
-      ? field("Model", select(cerebrasModel, setCerebrasModel, CEREBRAS_AGENT_MODELS, busy))
-      : null,
-    needsGroqKey || (provider === "groq" && settings.hasGroqKey)
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: groqKey,
-            onChange: (e) => setGroqKey(e.target.value),
-            placeholder: settings.hasGroqKey ? "configured (enter to replace)" : "gsk_...",
-            disabled: busy,
-          }),
-        )
-      : null,
-    needsCerebrasKey || (provider === "cerebras" && settings.hasCerebrasKey)
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: cerebrasKey,
-            onChange: (e) => setCerebrasKey(e.target.value),
-            placeholder: settings.hasCerebrasKey ? "configured (enter to replace)" : "csk-...",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "openrouter"
-      ? field(
-          "Model",
-          React.createElement(
-            "input",
-            {
-              type: "text",
-              value: openrouterModel,
-              onChange: (e) => setOpenrouterModel(e.target.value),
-              placeholder: "anthropic/claude-3.5-sonnet",
-              list: "openrouter-model-suggestions",
-              disabled: busy,
-            },
-          ),
-          React.createElement(
-            "datalist",
-            { id: "openrouter-model-suggestions" },
-            ...OPENROUTER_AGENT_MODELS.map((m) =>
-              React.createElement("option", { key: m, value: m }),
-            ),
-          ),
-        )
-      : null,
-    provider === "openrouter"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: openrouterBaseURL,
-            onChange: (e) => setOpenrouterBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
-      : null,
-    needsOpenRouterKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openrouterKey,
-            onChange: (e) => setOpenrouterKey(e.target.value),
-            placeholder: "sk-or-v1-...",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "openrouter" && settings.hasOpenRouterKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openrouterKey,
-            onChange: (e) => setOpenrouterKey(e.target.value),
-            placeholder: "configured (enter to replace)",
-            disabled: busy,
-          }),
-        )
-      : null,
-    needsOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "sk-...",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "openai" && settings.hasOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "configured (enter to replace)",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "openai"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: openaiBaseURL,
-            onChange: (e) => setOpenaiBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
-      : null,
-    errorText
-      ? React.createElement("div", { className: "editor-error" }, errorText)
-      : null,
-    React.createElement(
-      "div",
-      { className: "editor-actions" },
-      React.createElement(
-        "button",
-        { className: "secondary", onClick: onCancel, disabled: busy },
-        "Cancel",
-      ),
-      React.createElement(
-        "button",
-        {
-          onClick: submit,
-          disabled: busy || needsOpenAIKey || needsOpenRouterKey || needsGroqKey || needsCerebrasKey,
-        },
-        busy ? "Saving..." : "Save",
-      ),
-    ),
-  );
-}
-
-function TranscriptionEditor({ settings, onSave, onCancel }) {
-  const [provider, setProvider] = React.useState(
-    settings.transcription.provider,
-  );
-  const [moonshineModel, setMoonshineModel] = React.useState(
-    settings.transcription.moonshine.model,
-  );
-  const [openaiModel, setOpenaiModel] = React.useState(
-    settings.transcription.openai.model,
-  );
-  const [openaiKey, setOpenaiKey] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [errorText, setErrorText] = React.useState("");
-
-  const needsOpenAIKey =
-    provider === "openai" && !settings.hasOpenAIKey && !openaiKey;
-
-  async function submit() {
-    setBusy(true);
-    setErrorText("");
-    const patch = { transcription: { provider, moonshine: {}, openai: {} } };
-    if (provider === "moonshine")
-      patch.transcription.moonshine.model = moonshineModel;
-    if (provider === "openai") patch.transcription.openai.model = openaiModel;
-    if (openaiKey) patch.apiKeys = { openai: openaiKey };
-    try {
-      await onSave(patch);
-    } catch (error) {
-      setErrorText(error.message);
-      setBusy(false);
-    }
-  }
-
-  return React.createElement(
-    "div",
-    { className: "editor-grid" },
-    field(
-      "Provider",
-      React.createElement(
-        "select",
-        {
-          value: provider,
-          onChange: (e) => setProvider(e.target.value),
-          disabled: busy,
-        },
-        React.createElement(
-          "option",
-          { value: "moonshine" },
-          "Moonshine (local)",
-        ),
-        React.createElement("option", { value: "openai" }, "OpenAI Realtime"),
-      ),
-    ),
-    provider === "moonshine"
-      ? field(
-          "Model",
-          select(moonshineModel, setMoonshineModel, MOONSHINE_MODELS, busy),
-        )
-      : null,
-    provider === "openai"
-      ? field(
-          "Model",
-          select(
-            openaiModel,
-            setOpenaiModel,
-            OPENAI_TRANSCRIPTION_MODELS,
-            busy,
-          ),
-        )
-      : null,
-    needsOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "sk-...",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "openai" && settings.hasOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "configured (enter to replace)",
-            disabled: busy,
-          }),
-        )
-      : null,
-    errorText
-      ? React.createElement("div", { className: "editor-error" }, errorText)
-      : null,
-    React.createElement(
-      "div",
-      { className: "editor-actions" },
-      React.createElement(
-        "button",
-        { className: "secondary", onClick: onCancel, disabled: busy },
-        "Cancel",
-      ),
-      React.createElement(
-        "button",
-        { onClick: submit, disabled: busy || needsOpenAIKey },
-        busy ? "Saving..." : "Save",
-      ),
-    ),
-  );
-}
-
-function field(label, control) {
-  return React.createElement(
-    "label",
-    { className: "field" },
-    React.createElement("span", { className: "field-label" }, label),
-    control,
-  );
-}
-
-function select(value, onChange, options, disabled) {
-  return React.createElement(
-    "select",
-    { value, onChange: (e) => onChange(e.target.value), disabled },
-    options.map((option) =>
-      React.createElement("option", { key: option, value: option }, option),
-    ),
-  );
-}
-
-async function createAudioStreamer(media, onChunk) {
-  const context = new AudioContext();
-  const source = context.createMediaStreamSource(media);
-  const processor = context.createScriptProcessor(4096, 1, 1);
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 1024;
-  analyser.smoothingTimeConstant = 0.85;
-  let carry = new Float32Array(0);
-
-  processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer.getChannelData(0);
-    const resampled = resample(input, context.sampleRate, SAMPLE_RATE, carry);
-    carry = resampled.carry;
-    if (resampled.samples.length > 0) {
-      onChunk(pcm16ToBase64(resampled.samples));
-    }
-  };
-
-  source.connect(analyser);
-  source.connect(processor);
-  processor.connect(context.destination);
-
-  return {
-    analyser,
-    close: async () => {
-      processor.disconnect();
-      source.disconnect();
-      analyser.disconnect();
-      await context.close();
-    },
-  };
-}
-
-function resample(input, fromRate, toRate, carry) {
-  const merged = new Float32Array(carry.length + input.length);
-  merged.set(carry);
-  merged.set(input, carry.length);
-
-  const ratio = fromRate / toRate;
-  const outputLength = Math.floor((merged.length - 1) / ratio);
-  const output = new Float32Array(outputLength);
-
-  for (let index = 0; index < outputLength; index += 1) {
-    const sourceIndex = index * ratio;
-    const left = Math.floor(sourceIndex);
-    const right = Math.min(left + 1, merged.length - 1);
-    const weight = sourceIndex - left;
-    output[index] = merged[left] * (1 - weight) + merged[right] * weight;
-  }
-
-  const consumed = Math.floor(outputLength * ratio);
-  return { samples: output, carry: merged.slice(consumed) };
-}
-
-function pcm16ToBase64(samples) {
-  const pcm = new Int16Array(samples.length);
-  for (let index = 0; index < samples.length; index += 1) {
-    const sample = Math.max(-1, Math.min(1, samples[index]));
-    pcm[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-  }
-  const bytes = new Uint8Array(pcm.buffer);
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
-  }
-  return btoa(binary);
-}
-
-// Convert Excalidraw native elements back into the simple "skeleton" shape the
-// server stores. Critical: when the agent emits {rectangle, label: "X"},
-// convertToExcalidrawElements expands that into a rectangle PLUS a separate
-// bound text element. If we echo both back to the server verbatim, the server's
-// state.elements doubles up - on the next agent turn the rectangle has lost its
-// label, the agent re-adds it, Excalidraw creates ANOTHER bound text, and now
-// the canvas renders the same label twice. Folding bound text back into the
-// shape's label field on the way out keeps state.elements in the canonical form
-// the agent expects.
-function nativeElementsToSkeletonForSync(nativeElements) {
-  const elements = nativeElements.filter((el) => el && !el.isDeleted);
-  const byId = new Map(elements.map((el) => [el.id, el]));
-  const consumedTextIds = new Set();
-  const result = [];
-
-  for (const el of elements) {
-    // Bound text whose parent shape is in the scene: skip - it'll be folded
-    // into the parent's label below.
-    if (el.type === "text" && el.containerId && byId.has(el.containerId)) {
-      consumedTextIds.add(el.id);
-      continue;
-    }
-
-    const boundElements = Array.isArray(el.boundElements)
-      ? el.boundElements
-      : null;
-    const textBinding =
-      boundElements && boundElements.find((b) => b?.type === "text");
-    const labelText = textBinding && byId.get(textBinding.id);
-
-    if (labelText) {
-      consumedTextIds.add(labelText.id);
-      result.push({
-        ...stripInternalFields(el),
-        label: {
-          text: labelText.text ?? "",
-          fontSize: labelText.fontSize ?? 18,
-        },
-      });
-      continue;
-    }
-
-    result.push(stripInternalFields(el));
-  }
-
-  return result.filter((el) => !consumedTextIds.has(el.id));
-}
-
-function stripInternalFields(el) {
-  // Drop Excalidraw fields that change on every render (cache thrash) or that
-  // we don't want the agent reasoning about (locking, grouping, etc.).
-  const {
-    versionNonce,
-    version,
-    updated,
-    seed,
-    index,
-    link,
-    locked,
-    customData,
-    frameId,
-    groupIds,
-    boundElements,
-    containerId,
-    isDeleted,
-    ...rest
-  } = el;
-  return rest;
 }
 
 function blobToDataUrl(blob) {
@@ -3235,441 +1590,6 @@ async function downscaleBlobByHalf(blob) {
   }
 }
 
-// Nudge bar. Renders in the side panel during PRESO mode. Lets the user steer
-// the agent mid-session without restarting. POSTs to /api/preso/nudge which
-// pushes a system-message directive into agentHistory for the next turn.
-const NUDGE_PLACEHOLDERS = [
-  "Use a flowchart instead",
-  "Group by quarter",
-  "Highlight risks in orange",
-  "Reorganize as a 2x2 matrix",
-  "Drop the licenses node",
-];
-function NudgeBar() {
-  const [value, setValue] = React.useState("");
-  const [sending, setSending] = React.useState(false);
-  const [recent, setRecent] = React.useState([]);
-  const [confirm, setConfirm] = React.useState(false);
-  const [errorText, setErrorText] = React.useState("");
-  const [placeholderIndex, setPlaceholderIndex] = React.useState(0);
-  const inputRef = React.useRef(null);
-
-  // v0.12.0: Cmd+K focus shortcut hook
-  React.useEffect(() => {
-    const handler = () => { inputRef.current?.focus(); };
-    window.addEventListener("champpreso:focus-nudge", handler);
-    return () => window.removeEventListener("champpreso:focus-nudge", handler);
-  }, []);
-
-  React.useEffect(() => {
-    const id = setInterval(
-      () => setPlaceholderIndex((i) => (i + 1) % NUDGE_PLACEHOLDERS.length),
-      4000,
-    );
-    return () => clearInterval(id);
-  }, []);
-
-  React.useEffect(() => {
-    if (!confirm) return;
-    const id = setTimeout(() => setConfirm(false), 2000);
-    return () => clearTimeout(id);
-  }, [confirm]);
-
-  async function submit() {
-    const text = value.trim();
-    if (!text || sending) return;
-    setSending(true);
-    setErrorText("");
-    try {
-      const res = await fetch("/api/preso/nudge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${res.status}`);
-      }
-      setValue("");
-      setRecent((prev) => [text, ...prev.filter((t) => t !== text)].slice(0, 3));
-      setConfirm(true);
-    } catch (error) {
-      setErrorText(error.message || "Nudge failed.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  function onKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      submit();
-    }
-  }
-
-  return React.createElement(
-    "div",
-    { className: "nudge-bar" },
-    React.createElement("div", { className: "nudge-label" }, "NUDGE"),
-    React.createElement(
-      "div",
-      { className: "nudge-input-row" },
-      React.createElement("input", {
-        ref: inputRef,
-        type: "text",
-        className: "nudge-input",
-        placeholder: NUDGE_PLACEHOLDERS[placeholderIndex],
-        value,
-        disabled: sending,
-        onChange: (e) => setValue(e.target.value),
-        onKeyDown,
-        maxLength: 500,
-      }),
-      React.createElement(
-        "button",
-        {
-          className: "nudge-send",
-          onClick: submit,
-          disabled: sending || !value.trim(),
-          title: "Send nudge (Enter)",
-          "aria-label": "Send nudge",
-        },
-        sending ? "..." : "↑",
-      ),
-    ),
-    confirm
-      ? React.createElement("div", { className: "nudge-confirm" }, "Nudge applied.")
-      : null,
-    errorText
-      ? React.createElement("div", { className: "nudge-error" }, errorText)
-      : null,
-    recent.length > 0
-      ? React.createElement(
-          "div",
-          { className: "nudge-recent" },
-          React.createElement("span", { className: "nudge-recent-label" }, "Recent: "),
-          ...recent.map((text, i) =>
-            React.createElement(
-              "button",
-              {
-                key: `${text}-${i}`,
-                className: "nudge-recent-chip",
-                onClick: () => setValue(text),
-                title: "Click to reuse",
-              },
-              text.length > 28 ? text.slice(0, 26) + "..." : text,
-            ),
-          ),
-        )
-      : null,
-  );
-}
-
-// Backlog pill. Shows how far behind the agent is relative to live speech.
-// Renders in PRESO mode only, next to the Pause Capture button.
-function BacklogPill({ stats }) {
-  if (!stats) return null;
-  const total = (stats.pending ?? 0) + (stats.buffered ?? 0);
-  const seconds = Math.round((stats.estimatedCatchupMs ?? 0) / 1000);
-  const ageSeconds = Math.round((stats.ageMs ?? 0) / 1000);
-  let severity = "calm";
-  if (seconds >= 30 || total >= 4) severity = "alert";
-  else if (seconds >= 12 || total >= 2) severity = "warn";
-
-  const lines = [];
-  if (stats.running) lines.push("Thinking");
-  if (total > 0) lines.push(`${total} queued`);
-  if (seconds > 0) lines.push(`~${seconds}s behind`);
-  if (lines.length === 0) lines.push("Active");
-
-  return React.createElement(
-    "div",
-    {
-      className: `backlog-pill ${severity}`,
-      title: `Avg turn: ${Math.round((stats.avgTurnMs ?? 0) / 100) / 10}s. Oldest queued chunk: ${ageSeconds}s ago.`,
-    },
-    React.createElement("span", { className: `backlog-dot ${severity}` }),
-    React.createElement("span", null, lines.join(" · ")),
-  );
-}
-
-// Floating question card. Anchored to the top-center of the canvas. Visible
-// when the agent has called ask_user_question. User taps an option or types
-// a custom answer; either way the answer flows into agentHistory.
-function QuestionCard({ question, onAnswer, onDismiss, position = "top" }) {
-  const [custom, setCustom] = React.useState("");
-  const inputRef = React.useRef(null);
-
-  React.useEffect(() => {
-    // Soft focus the input after a tick so screen readers announce the
-    // question before the cursor lands.
-    const t = setTimeout(() => inputRef.current?.focus(), 600);
-    return () => clearTimeout(t);
-  }, [question.id]);
-
-  function submitCustom() {
-    const text = custom.trim();
-    if (!text) return;
-    onAnswer(text);
-  }
-
-  return React.createElement(
-    "div",
-    {
-      className: `question-card ${position === "bottom" ? "at-bottom" : ""}`,
-      role: "dialog",
-      "aria-live": "polite",
-    },
-    React.createElement(
-      "div",
-      { className: "question-card-header" },
-      React.createElement("span", { className: "question-card-pill" }, "Quick question"),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "question-card-skip",
-          onClick: onDismiss,
-          title: "Skip this question; let the agent use its best guess",
-          "aria-label": "Skip",
-        },
-        "Skip",
-      ),
-    ),
-    React.createElement("p", { className: "question-card-body" }, question.question),
-    Array.isArray(question.options) && question.options.length > 0
-      ? React.createElement(
-          "div",
-          { className: "question-card-options" },
-          ...question.options.map((opt, idx) =>
-            React.createElement(
-              "button",
-              {
-                key: `${opt}-${idx}`,
-                type: "button",
-                className: "question-card-option",
-                onClick: () => onAnswer(opt),
-              },
-              opt,
-            ),
-          ),
-        )
-      : null,
-    React.createElement(
-      "div",
-      { className: "question-card-custom" },
-      React.createElement("input", {
-        ref: inputRef,
-        type: "text",
-        className: "question-card-custom-input",
-        placeholder: "Or type a brief answer...",
-        value: custom,
-        onChange: (e) => setCustom(e.target.value),
-        onKeyDown: (e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            submitCustom();
-          }
-        },
-        maxLength: 500,
-      }),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "question-card-custom-send",
-          onClick: submitCustom,
-          disabled: !custom.trim(),
-          title: "Send (Enter)",
-          "aria-label": "Send custom answer",
-        },
-        "↑",
-      ),
-    ),
-  );
-}
-
-// === v0.8.0 Export menu ===
-// Dropdown with PNG / SVG / .excalidraw export. Closes on outside click.
-function ExportMenu({ onExport }) {
-  const [open, setOpen] = React.useState(false);
-  React.useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (!e.target.closest(".export-menu")) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-  return React.createElement(
-    "div",
-    { className: "export-menu" },
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: "export-trigger",
-        onClick: () => setOpen((v) => !v),
-        title: "Export the canvas for sharing",
-      },
-      "⤴ Share / Export",
-      React.createElement("span", { className: "ex-chev" }, open ? "▴" : "▾"),
-    ),
-    open
-      ? React.createElement(
-          "div",
-          { className: "export-pop" },
-          React.createElement(
-            "button",
-            {
-              type: "button",
-              className: "export-opt",
-              onClick: () => { onExport("png"); setOpen(false); },
-            },
-            "📷 PNG image (high res)",
-          ),
-          React.createElement(
-            "button",
-            {
-              type: "button",
-              className: "export-opt",
-              onClick: () => { onExport("svg"); setOpen(false); },
-            },
-            "✒ SVG vector",
-          ),
-          React.createElement(
-            "button",
-            {
-              type: "button",
-              className: "export-opt",
-              onClick: () => { onExport("excalidraw"); setOpen(false); },
-            },
-            "📁 .excalidraw file",
-          ),
-        )
-      : null,
-  );
-}
-
-// === v0.4.0 Quick Actions and Pattern Picker ===
-
-// Pre-baked nudges. Click sends straight to /api/preso/nudge. The strings are
-// chosen to be unambiguous, action-oriented, and match the system prompt's
-// pattern library + icon vocabulary.
-const QUICK_ACTIONS = [
-  { label: "Reorganize", text: "Reorganize the canvas. Pick a clearer visual pattern and rebuild." },
-  { label: "Mermaid flow", text: "Use render_mermaid to draw a flowchart of what we just discussed. Place it in clear space on the canvas." },
-  { label: "Mermaid sequence", text: "Use render_mermaid to draw a sequenceDiagram of the interactions we just discussed." },
-  { label: "Mindmap it", text: "Use render_mermaid with a mindmap diagram to expand around the central concept on the canvas." },
-  { label: "Color by owner", text: "Color-code shapes by owner. Same owner = same color." },
-  { label: "Simplify", text: "Simplify. Reduce to the 5-6 most important nodes. Drop the rest." },
-];
-const PATTERN_PICKS = [
-  { label: "Hub-spoke", text: "Switch to the HUB-AND-SPOKE pattern. One primary node in the center, spokes radiating." },
-  { label: "2×2 matrix", text: "Switch to the 2x2 MATRIX pattern. Two axes, four labeled quadrants." },
-  { label: "Timeline", text: "Switch to the TIMELINE pattern. Horizontal arrow spine with milestone nodes." },
-  { label: "Flow", text: "Switch to the FLOW pattern. Linear chain with diamond decision points." },
-  { label: "Tree", text: "Switch to the TREE / HIERARCHY pattern. Top node fanning down." },
-  { label: "Compare", text: "Switch to the SIDE-BY-SIDE COMPARISON pattern. Two labeled columns." },
-  { label: "Causal loop", text: "Switch to the CAUSAL LOOP pattern. Nodes in a circle with feedback arrows." },
-  { label: "Funnel", text: "Switch to the FUNNEL pattern. Vertical sequence of narrowing rectangles." },
-];
-
-function QuickActions() {
-  const [busy, setBusy] = React.useState(null);
-  const [flash, setFlash] = React.useState("");
-  const [patternsOpen, setPatternsOpen] = React.useState(false);
-
-  async function send(action) {
-    if (busy) return;
-    setBusy(action.label);
-    setFlash("");
-    try {
-      const res = await fetch("/api/preso/nudge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: action.text }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${res.status}`);
-      }
-      setFlash(`Sent: ${action.label}`);
-      setTimeout(() => setFlash(""), 1800);
-    } catch (e) {
-      setFlash(`Failed: ${e.message}`);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return React.createElement(
-    "div",
-    { className: "quick-actions" },
-    React.createElement(
-      "div",
-      { className: "qa-row-label" },
-      React.createElement("span", null, "QUICK ACTIONS"),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "qa-toggle-patterns",
-          onClick: () => setPatternsOpen((v) => !v),
-          title: "Show visual pattern picker",
-        },
-        patternsOpen ? "− Patterns" : "+ Patterns",
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "qa-chips" },
-      ...QUICK_ACTIONS.map((a) =>
-        React.createElement(
-          "button",
-          {
-            key: a.label,
-            type: "button",
-            className: `qa-chip ${busy === a.label ? "busy" : ""}`,
-            onClick: () => send(a),
-            disabled: !!busy,
-            title: a.text,
-          },
-          a.label,
-        ),
-      ),
-    ),
-    patternsOpen
-      ? React.createElement(
-          "div",
-          { className: "qa-chips qa-patterns" },
-          ...PATTERN_PICKS.map((p) =>
-            React.createElement(
-              "button",
-              {
-                key: p.label,
-                type: "button",
-                className: `qa-chip qa-pattern ${busy === p.label ? "busy" : ""}`,
-                onClick: () => send(p),
-                disabled: !!busy,
-                title: p.text,
-              },
-              p.label,
-            ),
-          ),
-        )
-      : null,
-    flash
-      ? React.createElement("div", { className: "qa-flash" }, flash)
-      : null,
-  );
-}
-
-// === v0.3.0 Aegis components ===
-
-// Compute the per-session world hue tokens from a single primary hex value.
-// Used to set --p/--s/--g/--t on the shell so every Aegis-themed surface picks
-// up the user's brand swatch choice.
 function computeWorldStyle(primary) {
   const map = {
     "#FF6B35": { s: "#C2410C", g: "#FFB088", t: "#2B1308" }, // Champ Ember
@@ -3681,381 +1601,6 @@ function computeWorldStyle(primary) {
   };
   const w = map[primary] || map["#FF6B35"];
   return { "--p": primary, "--s": w.s, "--g": w.g, "--t": w.t };
-}
-
-const WORLD_SWATCHES = [
-  { hex: "#FF6B35", name: "Champ Ember" },
-  { hex: "#F26722", name: "Champions Orange" },
-  { hex: "#06B6D4", name: "Cyan" },
-  { hex: "#7C5CFF", name: "Violet" },
-  { hex: "#10B981", name: "Verdant" },
-  { hex: "#EC4899", name: "Pulse" },
-];
-
-// v0.7.0: Floating "Working in: ZONE" chip on the canvas. Reflects the
-// agent's declared active zone (sketches/structured/notes).
-function ZoneChip({ zone }) {
-  const labels = {
-    sketches: "Sketches",
-    structured: "Structured",
-    notes: "Notes",
-  };
-  const label = labels[zone] || "Structured";
-  return React.createElement(
-    "div",
-    { className: `zone-chip zone-${zone || "structured"}` },
-    React.createElement("span", { className: "zc-dot" }),
-    React.createElement("span", { className: "zc-label" }, "Working in:"),
-    React.createElement("span", { className: "zc-zone" }, label),
-  );
-}
-
-// Onboarding ribbon. First-launch only. Dismissable, persists choice.
-function OnboardingRibbon({ onDismiss }) {
-  return React.createElement(
-    "div",
-    { className: "onboarding-ribbon", role: "status" },
-    React.createElement(
-      "span",
-      null,
-      React.createElement("b", null, "Try this. "),
-      "Pick an agent ",
-      React.createElement("span", { className: "step" }, "→"),
-      " click ",
-      React.createElement("b", null, "Start Preso"),
-      " ",
-      React.createElement("span", { className: "step" }, "→"),
-      " speak for 30 seconds.",
-    ),
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: "x",
-        onClick: onDismiss,
-        title: "Dismiss",
-        "aria-label": "Dismiss",
-      },
-      "×",
-    ),
-  );
-}
-
-// Canvas-level palette swatch row. Shifts down 50px when onboarding ribbon
-// is up so they never collide.
-const CANVAS_PALETTES = {
-  champions: { label: "Champions", dots: ["var(--p)", "var(--s)", "var(--g)"] },
-  cool:      { label: "Cool",      dots: ["#2563EB", "#0E7490", "#67E8F9"] },
-  warm:      { label: "Warm",      dots: ["#EA580C", "#B91C1C", "#F59E0B"] },
-  mono:      { label: "Mono",      dots: ["#1E222D", "#6B7280", "#D1D5DB"] },
-};
-const CANVAS_PALETTE_ORDER = ["champions", "cool", "warm", "mono"];
-function PaletteRow({ active, onChange, shift }) {
-  return React.createElement(
-    "div",
-    { className: `palette-row ${shift ? "shift" : ""}` },
-    React.createElement("span", { className: "pr-label" }, "Palette"),
-    ...CANVAS_PALETTE_ORDER.map((k) =>
-      React.createElement(
-        "button",
-        {
-          key: k,
-          type: "button",
-          className: `palette-btn ${active === k ? "active" : ""}`,
-          onClick: () => onChange(k),
-        },
-        React.createElement(
-          "span",
-          { className: "palette-dots" },
-          ...CANVAS_PALETTES[k].dots.map((c, i) =>
-            React.createElement("i", { key: i, style: { background: c } }),
-          ),
-        ),
-        React.createElement("span", { className: "palette-name" }, CANVAS_PALETTES[k].label),
-      ),
-    ),
-  );
-}
-
-// Caption mode FAB (Present / Work toggle).
-function CaptionFab({ mode, onChange, shift }) {
-  return React.createElement(
-    "div",
-    { className: `caption-fab ${shift ? "shift" : ""}` },
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: `cf-opt ${mode === "presentation" ? "on" : ""}`,
-        onClick: () => onChange("presentation"),
-        title: "Big presentation captions, bottom-center",
-      },
-      "Present",
-    ),
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: `cf-opt ${mode === "working" ? "on" : ""}`,
-        onClick: () => onChange("working"),
-        title: "Small working captions, top-right",
-      },
-      "Work",
-    ),
-  );
-}
-
-// UI Settings drawer. Renders inside the side panel; toggles every Aegis
-// preference and persists each change via the parent's onChange (which routes
-// through saveSettings → PUT /api/settings).
-function UISettingsPanel({ prefs, onChange, onClose }) {
-  return React.createElement(
-    "div",
-    { className: "ui-settings" },
-    React.createElement(
-      "div",
-      { className: "us-title" },
-      React.createElement("span", null, "UI Settings"),
-      React.createElement(
-        "button",
-        { className: "us-close", onClick: onClose, "aria-label": "Close UI settings" },
-        "✕",
-      ),
-    ),
-    React.createElement("div", { className: "ui-section-label" }, "Theme"),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Primary hue"),
-      React.createElement(
-        "div",
-        { className: "ui-swatches" },
-        ...WORLD_SWATCHES.map((s) =>
-          React.createElement("button", {
-            key: s.hex,
-            type: "button",
-            className: `ui-swatch ${prefs.themePrimary === s.hex ? "active" : ""}`,
-            style: { background: s.hex },
-            onClick: () => onChange("themePrimary", s.hex),
-            title: s.name,
-            "aria-label": s.name,
-          }),
-        ),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Panel theme"),
-      React.createElement(
-        "div",
-        { className: "ui-seg" },
-        React.createElement(
-          "button",
-          {
-            className: prefs.panelTheme === "dark" ? "on" : "",
-            onClick: () => onChange("panelTheme", "dark"),
-          },
-          "Dark",
-        ),
-        React.createElement(
-          "button",
-          {
-            className: prefs.panelTheme === "light" ? "on" : "",
-            onClick: () => onChange("panelTheme", "light"),
-          },
-          "Light",
-        ),
-      ),
-    ),
-    React.createElement("div", { className: "ui-section-label" }, "Layout"),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Backlog Pill position"),
-      React.createElement(
-        "div",
-        { className: "ui-seg" },
-        React.createElement(
-          "button",
-          {
-            className: prefs.backlogPosition === "above" ? "on" : "",
-            onClick: () => onChange("backlogPosition", "above"),
-          },
-          "Above",
-        ),
-        React.createElement(
-          "button",
-          {
-            className: prefs.backlogPosition === "below" ? "on" : "",
-            onClick: () => onChange("backlogPosition", "below"),
-          },
-          "Below",
-        ),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Status Card in PRESO"),
-      React.createElement(
-        "div",
-        { className: "ui-seg" },
-        React.createElement(
-          "button",
-          {
-            className: prefs.statusDensity === "expand" ? "on" : "",
-            onClick: () => onChange("statusDensity", "expand"),
-          },
-          "Expand",
-        ),
-        React.createElement(
-          "button",
-          {
-            className: prefs.statusDensity === "collapse" ? "on" : "",
-            onClick: () => onChange("statusDensity", "collapse"),
-          },
-          "Collapse",
-        ),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Question Card anchor"),
-      React.createElement(
-        "div",
-        { className: "ui-seg" },
-        React.createElement(
-          "button",
-          {
-            className: prefs.questionPos === "top" ? "on" : "",
-            onClick: () => onChange("questionPos", "top"),
-          },
-          "Top",
-        ),
-        React.createElement(
-          "button",
-          {
-            className: prefs.questionPos === "bottom" ? "on" : "",
-            onClick: () => onChange("questionPos", "bottom"),
-          },
-          "Bottom",
-        ),
-      ),
-    ),
-    React.createElement("div", { className: "ui-section-label" }, "Canvas"),
-    React.createElement(
-      "div",
-      { className: "ui-row inline" },
-      React.createElement("label", null, "Show palette row"),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "ui-toggle",
-          "data-on": prefs.paletteRow ? "1" : "0",
-          onClick: () => onChange("paletteRow", !prefs.paletteRow),
-          "aria-label": "Toggle palette row",
-        },
-        React.createElement("i"),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Active palette"),
-      React.createElement(
-        "div",
-        { className: "ui-seg" },
-        ...CANVAS_PALETTE_ORDER.map((k) =>
-          React.createElement(
-            "button",
-            {
-              key: k,
-              className: prefs.activePalette === k ? "on" : "",
-              onClick: () => onChange("activePalette", k),
-            },
-            CANVAS_PALETTES[k].label,
-          ),
-        ),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row inline" },
-      React.createElement("label", null, "Captions on"),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "ui-toggle",
-          "data-on": prefs.captionsOn ? "1" : "0",
-          onClick: () => onChange("captionsOn", !prefs.captionsOn),
-          "aria-label": "Toggle captions",
-        },
-        React.createElement("i"),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row" },
-      React.createElement("label", null, "Caption mode"),
-      React.createElement(
-        "div",
-        { className: "ui-seg" },
-        React.createElement(
-          "button",
-          {
-            className: prefs.captionMode === "presentation" ? "on" : "",
-            onClick: () => onChange("captionMode", "presentation"),
-          },
-          "Present",
-        ),
-        React.createElement(
-          "button",
-          {
-            className: prefs.captionMode === "working" ? "on" : "",
-            onClick: () => onChange("captionMode", "working"),
-          },
-          "Work",
-        ),
-      ),
-    ),
-    React.createElement("div", { className: "ui-section-label" }, "Micro"),
-    React.createElement(
-      "div",
-      { className: "ui-row inline" },
-      React.createElement("label", null, "Breathing underline"),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "ui-toggle",
-          "data-on": prefs.toggleBreathe ? "1" : "0",
-          onClick: () => onChange("toggleBreathe", !prefs.toggleBreathe),
-          "aria-label": "Toggle breathing underline",
-        },
-        React.createElement("i"),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "ui-row inline" },
-      React.createElement("label", null, "Onboarding ribbon"),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "ui-toggle",
-          "data-on": prefs.onboarding ? "1" : "0",
-          onClick: () => onChange("onboarding", !prefs.onboarding),
-          "aria-label": "Toggle onboarding ribbon",
-        },
-        React.createElement("i"),
-      ),
-    ),
-  );
 }
 
 createRoot(document.getElementById("app")).render(React.createElement(App));

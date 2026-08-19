@@ -8,7 +8,7 @@ const rootDir = path.join(import.meta.dirname, "..");
 test("frontend clears stale agent thinking status when the socket is closed", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
 
-  assert.match(appSource, /ws\.addEventListener\("close",[\s\S]*setAgentStatus\("idle"\)/);
+  assert.match(appSource, /onClose:\s*\(\)\s*=>\s*\{[\s\S]*setAgentStatus\("idle"\)/);
   assert.match(appSource, /async function stopListening\(\)[\s\S]*setAgentStatus\("idle"\)/);
 });
 
@@ -44,8 +44,9 @@ test("frontend skips staging screenshot image when staging is empty", () => {
 
 test("frontend pushes user-drawn live elements to the server", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  const syncSource = readFileSync(path.join(rootDir, "public", "excalidraw-sync.js"), "utf8");
 
-  assert.match(appSource, /type: "whiteboard:user-elements"/);
+  assert.match(syncSource, /type: "whiteboard:user-elements"/);
   assert.match(appSource, /handleExcalidrawChange/);
 });
 
@@ -53,24 +54,33 @@ test("frontend flushes pending agent instructions before starting preso", () => 
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
 
   assert.match(appSource, /async function flushAgentInstructionsSave\(\)/);
-  assert.match(appSource, /async function startPreso\(\)[\s\S]*await flushAgentInstructionsSave\(\)[\s\S]*fetch\("\/api\/preso\/start"/);
+  assert.match(appSource, /async function startPreso\(\)[\s\S]*await flushAgentInstructionsSave\(\)[\s\S]*apiStartSession\(/);
 });
 
 test("frontend handles viewport commands from the agent", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  const syncSource = readFileSync(path.join(rootDir, "public", "excalidraw-sync.js"), "utf8");
 
   assert.match(appSource, /message\.type === "whiteboard:viewport"/);
   assert.match(appSource, /applyWhiteboardViewportCommand/);
-  assert.match(appSource, /action === "scroll_to_content"/);
-  assert.match(appSource, /action === "set_zoom"/);
+  assert.match(syncSource, /action === "scroll_to_content"/);
+  assert.match(syncSource, /action === "set_zoom"/);
 });
 
-test("frontend exposes OpenAI agent base URL and labels the key as API key", () => {
-  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+test("settings sheet exposes agent base URL + reasoning and labels the key as API key", () => {
+  const setupSource = readFileSync(
+    path.join(rootDir, "public", "screens", "setup-screen.js"),
+    "utf8",
+  );
 
-  assert.match(appSource, /const \[openaiBaseURL, setOpenaiBaseURL\] = React\.useState\([\s\S]*settings\.agent\.openai\.baseURL/);
-  assert.match(appSource, /patch\.agent\.openai\.baseURL = openaiBaseURL/);
-  assert.match(appSource, /provider === "openai"[\s\S]*field\([\s\S]*"Base URL"/);
-  assert.match(appSource, /field\([\s\S]*"API key"[\s\S]*placeholder: "configured \(enter to replace\)"/);
-  assert.doesNotMatch(appSource, /"OpenAI key"/);
+  // Base URL (OpenAI-compatible endpoint override) is wired through onSaveSettings.
+  assert.match(setupSource, /const \[baseURL, setBaseURL\] = React\.useState\(savedBaseURL\)/);
+  assert.match(setupSource, /onSaveSettings\(\{ agent: \{ \[agentProvider\]: \{ baseURL: value \} \} \}\)/);
+  assert.match(setupSource, /providerUsesBaseURL[\s\S]*"Base URL"/);
+  // Reasoning effort select for OpenAI, sourced from the shared constant.
+  assert.match(setupSource, /agentProvider === "openai"[\s\S]*"Reasoning"[\s\S]*REASONING_EFFORTS/);
+  assert.match(setupSource, /onSaveSettings\(\{ agent: \{ openai: \{ reasoningEffort: next \} \} \}\)/);
+  // Key field is labeled generically as "API key" with a configured placeholder.
+  assert.match(setupSource, /"API key"[\s\S]*"configured \(enter to replace\)"/);
+  assert.doesNotMatch(setupSource, /"OpenAI key"/);
 });

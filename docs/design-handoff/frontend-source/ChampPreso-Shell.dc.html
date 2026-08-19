@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aegis-design-system-00ce12d5-4452-4429-875f-d5bba9074713/colors_and_type.css">
+<link rel="stylesheet" href="_ds/aegis-design-system-00ce12d5-4452-4429-875f-d5bba9074713/styles.css">
+<script src="_ds/aegis-design-system-00ce12d5-4452-4429-875f-d5bba9074713/_ds_bundle.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;overflow:hidden;background:#FFFFFF}
+a{color:#FF6B35}a:hover{color:#FF8C5A}
+*{box-sizing:border-box}
+button{font-family:inherit}
+input,textarea{font-family:inherit}
+input::placeholder,textarea::placeholder{color:#6B7280}
+@keyframes ppPulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:.5}100%{transform:scale(1);opacity:1}}
+@keyframes ppPopIn{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes ppFadeUp{0%{transform:translateY(8px);opacity:0}100%{transform:translateY(0);opacity:1}}
+@keyframes ppDropIn{0%{transform:translate(-50%,-10px);opacity:0}100%{transform:translate(-50%,0);opacity:1}}
+@keyframes ppWave1{0%,100%{height:4px}50%{height:12px}}
+@keyframes ppWave2{0%,100%{height:10px}50%{height:5px}}
+@keyframes ppWave3{0%,100%{height:6px}50%{height:13px}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;background:#FFFFFF;font-family:var(--font-body,Inter,sans-serif);overflow:hidden" onKeyDown="{{ rootKeyDown }}" tabIndex="-1">
+
+  <!-- ============ CANVAS LAYER (simulated Excalidraw) ============ -->
+  <div style="position:absolute;inset:0;background-image:radial-gradient(circle,#ECEAE4 1px,transparent 1px);background-size:26px 26px">
+
+    <sc-for list="{{ boxes }}" as="b" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ b.left }}px;top:{{ b.top }}px;width:{{ b.w }}px;height:{{ b.h }}px;border:1.7px solid #1e1e1e;border-radius:255px 15px 225px 15px / 15px 225px 15px 255px;background:{{ b.fill }};transform:rotate({{ b.rot }}deg);display:flex;align-items:center;justify-content:center;text-align:center;padding:4px 8px;font-family:Caveat,cursive;font-size:19px;font-weight:600;color:#1e1e1e;animation:ppPopIn .35s cubic-bezier(0.34,1.56,0.64,1) both">{{ b.label }}</div>
+    </sc-for>
+
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ n.left }}px;top:{{ n.top }}px;width:{{ n.w }}px;min-height:52px;background:{{ n.fill }};border-radius:4px;box-shadow:1px 2px 4px rgba(0,0,0,.14);transform:rotate({{ n.rot }}deg);display:flex;align-items:center;padding:8px 10px;font-family:Caveat,cursive;font-size:17px;font-weight:500;color:#1e1e1e;animation:ppPopIn .35s cubic-bezier(0.34,1.56,0.64,1) both">{{ n.label }}</div>
+    </sc-for>
+
+    <sc-for list="{{ texts }}" as="t" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ t.left }}px;top:{{ t.top }}px;font-family:Caveat,cursive;font-size:{{ t.fs }}px;font-weight:600;color:#1e1e1e;white-space:nowrap;animation:ppPopIn .35s cubic-bezier(0.34,1.56,0.64,1) both">{{ t.label }}</div>
+    </sc-for>
+
+    <sc-for list="{{ arrows }}" as="a" hint-placeholder-count="0">
+      <svg style="position:absolute;left:{{ a.left }}px;top:{{ a.top }}px;overflow:visible;animation:ppPopIn .3s both" width="{{ a.w }}" height="{{ a.h }}" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-linecap="round"><path d="{{ a.d }}"></path><path d="{{ a.hd }}"></path></svg>
+    </sc-for>
+
+    <sc-if value="{{ showCanvasHint }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;color:#9CA3AF;pointer-events:none;max-width:380px">
+        <div style="font-family:Caveat,cursive;font-size:26px;color:#6B7280">Draw or paste what you have so far</div>
+        <div style="font-family:var(--font-body);font-size:13px;margin-top:6px;line-height:1.5">Whatever is on this canvas when you start becomes the agent's starting state. Blank is fine too.</div>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- ============ SETUP RAIL (1f) ============ -->
+  <sc-if value="{{ isSetup }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;left:0;top:0;bottom:0;width:284px;background:var(--champ-ink,#0B0D12);border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:16px;padding:24px 20px;overflow-y:auto;color:var(--champ-snow,#FAFAF7)">
+      <div style="font-family:var(--font-display);font-weight:600;font-size:20px;letter-spacing:-0.02em">Champ<span style="color:var(--champ-ember,#FF6B35)">Preso</span></div>
+
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.15em;color:var(--champ-mist,#6B7280)">NEW SESSION</div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="font-size:13px;font-weight:500;color:var(--champ-cloud,#D1D5DB)">Where should this conversation land?</label>
+        <textarea value="{{ intent }}" onChange="{{ onIntent }}" placeholder="Get to a concrete Q3 plan for Lake Stream" style="background:var(--champ-carbon,#14171F);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--champ-snow);font-size:13px;line-height:1.5;min-height:80px;resize:vertical;outline:none" style-focus="border-color:#FF6B35;box-shadow:0 0 0 3px rgba(255,107,53,0.25)"></textarea>
+        <div style="font-size:11.5px;color:var(--champ-mist);line-height:1.5">The intent steers what gets drawn. A goal converges the canvas. A question maps it.</div>
+      </div>
+
+      <label style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--champ-cloud);cursor:pointer">
+        <input type="checkbox" checked="{{ multi }}" onChange="{{ toggleMulti }}" style="width:16px;height:16px;accent-color:#FF6B35;cursor:pointer">
+        Multiple speakers
+      </label>
+
+      <button onClick="{{ restoreSession }}" style="display:flex;align-items:center;gap:8px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:9px 12px;color:var(--champ-cloud);font-size:13px;cursor:pointer;text-align:left;transition:all .12s" style-hover="border-color:rgba(255,255,255,0.2);background:var(--champ-slate,#1E222D)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
+        Restore last session
+      </button>
+      <sc-if value="{{ restoredText }}" hint-placeholder-val="{{ false }}">
+        <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--champ-verdant,#10B981);margin-top:-8px">{{ restoredText }}</div>
+      </sc-if>
+
+      <button onClick="{{ openSettings }}" style="display:flex;align-items:center;gap:8px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:9px 12px;color:var(--champ-cloud);font-size:13px;cursor:pointer;text-align:left;transition:all .12s" style-hover="border-color:rgba(255,255,255,0.2);background:var(--champ-slate,#1E222D)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        Settings · agent, transcription, mic
+      </button>
+
+      <div style="flex:1"></div>
+
+      <div style="font-size:12px;color:var(--champ-mist);line-height:1.55;border-top:1px solid rgba(255,255,255,0.06);padding-top:14px">Seed the canvas: paste or draw directly on it. The agent builds on whatever is there when you start.</div>
+
+      <button onClick="{{ startListening }}" style="height:46px;background:var(--champ-ember,#FF6B35);border:none;border-radius:8px;color:#fff;font-family:var(--font-display);font-weight:600;font-size:15px;cursor:pointer;box-shadow:0 0 24px rgba(255,107,53,0.3);transition:all .22s cubic-bezier(0.34,1.56,0.64,1)" style-hover="background:var(--champ-ember-glow,#FF8C5A);transform:translateY(-1px);box-shadow:0 0 32px rgba(255,107,53,0.5)">Start listening</button>
+
+      <div style="display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;color:var(--champ-mist)">
+        <span style="width:7px;height:7px;border-radius:50%;background:{{ readyDotColor }};animation:{{ readyDotAnim }};flex:none"></span>
+        {{ readyText }}
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ SETTINGS SHEET (consolidated, pre-meeting only) ============ -->
+  <sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeSettings }}" style="position:absolute;inset:0;background:rgba(11,13,18,0.35);z-index:38"></div>
+    <div style="position:absolute;left:0;top:0;bottom:0;width:428px;background:var(--champ-carbon,#14171F);border-right:1px solid rgba(255,255,255,0.08);box-shadow:24px 0 64px rgba(0,0,0,0.4);z-index:40;color:var(--champ-snow);display:flex;flex-direction:column;animation:ppFadeUp .38s cubic-bezier(0.34,1.56,0.64,1) both">
+      <div style="display:flex;align-items:center;gap:10px;padding:22px 24px 0">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:18px;letter-spacing:-0.01em">Settings</div>
+        <div style="flex:1"></div>
+        <button onClick="{{ closeSettings }}" aria-label="Close settings" style="width:28px;height:28px;background:transparent;border:none;border-radius:6px;color:var(--champ-mist);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s" style-hover="color:var(--champ-snow);background:rgba(255,255,255,0.06)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+      <div style="padding:6px 24px 0;font-size:12px;color:var(--champ-mist);line-height:1.5">Changes apply now. The agent re-warms in the background, nothing blocks.</div>
+
+      <div style="flex:1;overflow-y:auto;padding:18px 24px 24px;display:flex;flex-direction:column;gap:22px">
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist)">AGENT</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="font-size:12px;color:var(--champ-cloud)">Provider</label>
+            <select value="{{ agentProvider }}" onChange="{{ setAgentProvider }}" style="height:34px;background:var(--champ-ink,#0B0D12);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--champ-snow);font-size:13px;padding:0 10px;outline:none" style-focus="border-color:var(--champ-ember)">
+              <option value="groq">Groq · fast, free tier</option>
+              <option value="cerebras">Cerebras · fastest</option>
+              <option value="openrouter">OpenRouter · 200+ models</option>
+              <option value="openai">OpenAI</option>
+              <option value="ollama">Ollama · runs on this Mac</option>
+              <option value="codex">Codex · your ChatGPT plan</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="font-size:12px;color:var(--champ-cloud)">Model</label>
+            <select value="{{ agentModel }}" onChange="{{ setAgentModel }}" style="height:34px;background:var(--champ-ink,#0B0D12);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--champ-snow);font-size:13px;padding:0 10px;outline:none" style-focus="border-color:var(--champ-ember)">
+              <sc-for list="{{ agentModelOptions }}" as="m" hint-placeholder-count="0"><option value="{{ m }}">{{ m }}</option></sc-for>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="font-size:12px;color:var(--champ-cloud)">API key</label>
+            <input type="password" placeholder="configured (enter to replace)" onChange="{{ touchSettings }}" style="height:34px;background:var(--champ-ink,#0B0D12);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--champ-snow);font-size:13px;padding:0 10px;outline:none" style-focus="border-color:var(--champ-ember);box-shadow:0 0 0 3px rgba(255,107,53,0.25)">
+          </div>
+          <div style="font-size:11.5px;color:var(--champ-mist);line-height:1.5">Groq is free for 14,400 minutes a day. Swap providers any time, the canvas doesn't care.</div>
+        </div>
+
+        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist)">TRANSCRIPTION</div>
+          <div style="display:flex;background:var(--champ-ink,#0B0D12);border-radius:8px;padding:3px;gap:3px">
+            <sc-for list="{{ sttSegs }}" as="g" hint-placeholder-count="0">
+              <button onClick="{{ g.pick }}" style="flex:1;padding:8px 6px;background:{{ g.bg }};border:none;border-radius:6px;color:{{ g.color }};font-size:12px;font-weight:500;cursor:pointer;transition:all .12s;line-height:1.35" style-hover="color:var(--champ-snow)">{{ g.label }}<br><span style="font-size:10.5px;font-weight:400;opacity:.65">{{ g.sub }}</span></button>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="font-size:12px;color:var(--champ-cloud)">Model</label>
+            <select value="{{ sttModel }}" onChange="{{ setSttModel }}" style="height:34px;background:var(--champ-ink,#0B0D12);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--champ-snow);font-size:13px;padding:0 10px;outline:none" style-focus="border-color:var(--champ-ember)">
+              <sc-for list="{{ sttModelOptions }}" as="m" hint-placeholder-count="0"><option value="{{ m }}">{{ m }}</option></sc-for>
+            </select>
+          </div>
+          <div style="font-size:11.5px;color:var(--champ-mist);line-height:1.5">{{ sttHelp }}</div>
+        </div>
+
+        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist)">MICROPHONE</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="font-size:12px;color:var(--champ-cloud)">Device</label>
+            <select value="{{ micDevice }}" onChange="{{ setMicDevice }}" style="height:34px;background:var(--champ-ink,#0B0D12);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--champ-snow);font-size:13px;padding:0 10px;outline:none" style-focus="border-color:var(--champ-ember)">
+              <option value="MacBook Pro Microphone">MacBook Pro Microphone</option>
+              <option value="AirPods Pro">AirPods Pro</option>
+              <option value="Studio Display Microphone">Studio Display Microphone</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:12px;color:var(--champ-cloud)">Level</span>
+            <div style="display:flex;align-items:center;gap:2.5px;height:16px">
+              <span style="width:3px;background:var(--champ-verdant,#10B981);border-radius:2px;animation:ppWave1 .8s ease-in-out infinite"></span>
+              <span style="width:3px;background:var(--champ-verdant,#10B981);border-radius:2px;animation:ppWave2 .7s ease-in-out infinite"></span>
+              <span style="width:3px;background:var(--champ-verdant,#10B981);border-radius:2px;animation:ppWave3 .95s ease-in-out infinite"></span>
+              <span style="width:3px;background:var(--champ-verdant,#10B981);border-radius:2px;animation:ppWave1 .75s ease-in-out infinite"></span>
+              <span style="width:3px;background:var(--champ-verdant,#10B981);border-radius:2px;animation:ppWave2 .85s ease-in-out infinite"></span>
+              <span style="width:3px;background:var(--champ-verdant,#10B981);border-radius:2px;animation:ppWave3 .8s ease-in-out infinite"></span>
+            </div>
+            <span style="font-size:11.5px;color:var(--champ-mist)">Speak. The bars should move.</span>
+          </div>
+        </div>
+
+        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist)">APPEARANCE</div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:12px;color:var(--champ-cloud);width:92px">Panel theme</span>
+            <div style="display:flex;background:var(--champ-ink,#0B0D12);border-radius:8px;padding:3px;gap:3px">
+              <sc-for list="{{ themeSegs }}" as="g" hint-placeholder-count="0">
+                <button onClick="{{ g.pick }}" style="padding:5px 16px;background:{{ g.bg }};border:none;border-radius:6px;color:{{ g.color }};font-size:12px;cursor:pointer;transition:all .12s" style-hover="color:var(--champ-snow)">{{ g.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:12px;color:var(--champ-cloud);width:92px">Canvas palette</span>
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ paletteSwatches }}" as="p" hint-placeholder-count="0">
+                <button onClick="{{ p.pick }}" title="{{ p.name }}" aria-label="{{ p.name }}" style="width:22px;height:22px;border-radius:50%;background:{{ p.hex }};border:2px solid {{ p.ring }};cursor:pointer;transition:all .12s" style-hover="transform:scale(1.12)"></button>
+              </sc-for>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--champ-cloud);cursor:pointer">
+            <input type="checkbox" checked="{{ captionsEnabled }}" onChange="{{ toggleCaptions }}" style="width:14px;height:14px;accent-color:#FF6B35;cursor:pointer">
+            Live captions on by default
+          </label>
+        </div>
+      </div>
+
+      <div style="padding:14px 24px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.1em;color:var(--champ-mist)">
+        <span style="width:6px;height:6px;border-radius:50%;background:{{ readyDotColor }};animation:{{ readyDotAnim }};flex:none"></span>
+        {{ readyText }}
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TOP STATUS STRIP (1b halo) ============ -->
+  <sc-if value="{{ isLive }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:0;left:0;right:0;height:40px;background:rgba(11,13,18,0.96);backdrop-filter:blur(8px);display:flex;align-items:center;gap:12px;padding:0 14px;color:var(--champ-snow,#FAFAF7);z-index:20">
+      <div style="font-family:var(--font-display);font-weight:600;font-size:14px;letter-spacing:-0.02em">Champ<span style="color:var(--champ-ember)">Preso</span></div>
+      <div style="width:1px;height:16px;background:rgba(255,255,255,0.1)"></div>
+
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:8px;height:8px;border-radius:50%;background:{{ stateDotColor }};animation:{{ stateDotAnim }};box-shadow:{{ stateDotGlow }}"></span>
+        <span style="font-family:var(--font-display);font-weight:600;font-size:13px">{{ stateLabel }}</span>
+        <span style="font-family:var(--font-mono);font-size:12px;color:var(--champ-mist)">{{ clockText }}</span>
+      </div>
+
+      <sc-if value="{{ isListening }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:2px;height:14px">
+          <span style="width:2.5px;background:var(--champ-ember);border-radius:2px;animation:ppWave1 .9s ease-in-out infinite"></span>
+          <span style="width:2.5px;background:var(--champ-ember);border-radius:2px;animation:ppWave2 .8s ease-in-out infinite"></span>
+          <span style="width:2.5px;background:var(--champ-ember);border-radius:2px;animation:ppWave3 1s ease-in-out infinite"></span>
+          <span style="width:2.5px;background:var(--champ-ember);border-radius:2px;animation:ppWave2 .85s ease-in-out infinite"></span>
+        </div>
+      </sc-if>
+
+      <span style="font-size:12px;color:var(--champ-mist)">{{ statusText }}</span>
+
+      <sc-if value="{{ zoneText }}" hint-placeholder-val="{{ false }}">
+        <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:2px 7px;color:var(--champ-cloud)">{{ zoneText }}</span>
+      </sc-if>
+
+      <div style="flex:1"></div>
+
+      <sc-if value="{{ isPaused }}" hint-placeholder-val="{{ false }}">
+        <span style="font-size:12px;color:var(--champ-mist)">Mic is off. Canvas is yours.</span>
+        <button onClick="{{ resumeSession }}" style="height:26px;padding:0 14px;background:var(--champ-ember);border:none;border-radius:6px;color:#fff;font-family:var(--font-display);font-weight:600;font-size:12.5px;cursor:pointer;transition:all .12s" style-hover="background:var(--champ-ember-glow)">Resume</button>
+      </sc-if>
+      <sc-if value="{{ isListening }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ pauseSession }}" title="Mic off, agent holds" style="height:26px;padding:0 12px;background:transparent;border:1px solid rgba(255,255,255,0.14);border-radius:6px;color:var(--champ-cloud);font-size:12px;cursor:pointer;transition:all .12s" style-hover="border-color:var(--champ-ember);color:var(--champ-snow)">Pause</button>
+      </sc-if>
+
+      <button onClick="{{ undoTurn }}" title="Undo what it just drew (Cmd+Z)" style="height:26px;padding:0 12px;background:transparent;border:1px solid rgba(255,255,255,0.14);border-radius:6px;color:var(--champ-cloud);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .12s" style-hover="border-color:var(--champ-ember);color:var(--champ-snow)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>
+        Undo
+      </button>
+
+      <button onClick="{{ endSession }}" style="height:26px;padding:0 12px;background:transparent;border:1px solid rgba(255,255,255,0.14);border-radius:6px;color:var(--champ-cloud);font-size:12px;cursor:pointer;transition:all .12s" style-hover="border-color:var(--champ-ember);color:var(--champ-snow)">End</button>
+
+      <button onClick="{{ toggleDrawer }}" style="height:26px;padding:0 10px;background:transparent;border:none;border-radius:6px;color:var(--champ-mist);font-family:var(--font-mono);font-size:12px;cursor:pointer;transition:all .12s" style-hover="color:var(--champ-snow);background:rgba(255,255,255,0.06)">{{ costText }}</button>
+    </div>
+  </sc-if>
+
+  <!-- ============ STATUS DRAWER ============ -->
+  <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:46px;right:10px;width:264px;background:var(--champ-carbon,#14171F);border:1px solid rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,0.5);padding:16px;color:var(--champ-snow);z-index:30;animation:ppFadeUp .22s cubic-bezier(0.34,1.56,0.64,1) both">
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist);margin-bottom:10px">THIS SESSION</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--champ-cloud)">Agent · Llama 3.3 70B</span><span style="font-family:var(--font-mono);color:var(--champ-snow)">{{ costAgentText }}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--champ-cloud)">Transcription · local</span><span style="font-family:var(--font-mono);color:var(--champ-snow)">free</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--champ-cloud)">Drawings</span><span style="font-family:var(--font-mono);color:var(--champ-snow)">{{ turnCountText }}</span></div>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.06);margin:12px 0"></div>
+      <label style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--champ-cloud);cursor:pointer">
+        <input type="checkbox" checked="{{ captionsEnabled }}" onChange="{{ toggleCaptions }}" style="width:14px;height:14px;accent-color:#FF6B35;cursor:pointer">
+        Live captions
+      </label>
+      <div style="font-size:11px;color:var(--champ-mist);margin-top:10px;line-height:1.5">Settings live in Setup. End or pause the session to change them.</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ QUESTION CARD (quiz-grade) ============ -->
+  <sc-if value="{{ hasQuestion }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:52px;left:50%;transform:translateX(-50%);width:430px;max-width:calc(100vw - 32px);background:var(--champ-carbon,#14171F);border:1px solid rgba(255,255,255,0.08);border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,0.5);padding:18px 18px 14px;color:var(--champ-snow);z-index:25;animation:ppDropIn .38s cubic-bezier(0.34,1.56,0.64,1) both">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-ember)">{{ qEyebrow }}</span>
+        <div style="flex:1"></div>
+        <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--champ-mist)">{{ qCountdownText }}</span>
+        <button onClick="{{ skipQuestion }}" title="Skip. The agent uses its best guess." style="background:transparent;border:none;color:var(--champ-mist);font-size:12px;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .12s" style-hover="color:var(--champ-snow);background:rgba(255,255,255,0.06)">Skip</button>
+      </div>
+
+      <div style="font-family:var(--font-display);font-weight:600;font-size:16.5px;line-height:1.35;letter-spacing:-0.01em">{{ qText }}</div>
+
+      <sc-if value="{{ qAnswered }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--champ-verdant,#10B981);font-size:13.5px;font-weight:500">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+          {{ qAnswerEcho }}. Back to drawing.
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ qShowOptions }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+          <sc-for list="{{ qOptions }}" as="o" hint-placeholder-count="0">
+            <button onClick="{{ o.pick }}" style="display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;background:{{ o.bg }};border:1px solid {{ o.border }};border-radius:8px;color:var(--champ-snow);font-size:13.5px;font-weight:500;text-align:left;cursor:pointer;transition:all .12s cubic-bezier(0.34,1.56,0.64,1)" style-hover="border-color:var(--champ-ember);background:var(--champ-slate,#1E222D);transform:translateY(-1px)">
+              <span style="width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;border:1px solid {{ o.badgeBorder }};background:{{ o.badgeBg }};color:{{ o.badgeColor }};border-radius:6px">{{ o.letter }}</span>
+              {{ o.text }}
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ qShowInput }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input type="text" value="{{ qCustom }}" onChange="{{ onQCustom }}" onKeyDown="{{ qCustomKeyDown }}" placeholder="{{ qInputPlaceholder }}" style="flex:1;height:{{ qInputHeight }}px;background:var(--champ-ink,#0B0D12);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0 12px;color:var(--champ-snow);font-size:13px;outline:none" style-focus="border-color:var(--champ-ember);box-shadow:0 0 0 3px rgba(255,107,53,0.25)">
+          <button onClick="{{ submitQCustom }}" title="Send" style="width:{{ qInputHeight }}px;height:{{ qInputHeight }}px;flex:none;background:var(--champ-ember);border:none;border-radius:8px;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s" style-hover="background:var(--champ-ember-glow)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+          </button>
+        </div>
+      </sc-if>
+
+      <div style="height:3px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:14px;overflow:hidden">
+        <div style="height:3px;width:{{ qBarPct }}%;background:var(--champ-ember);border-radius:2px;transition:width .25s linear"></div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ CAPTION PILL ============ -->
+  <sc-if value="{{ captionShown }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:78px;left:50%;transform:translateX(-50%);max-width:min(560px,70vw);background:rgba(11,13,18,0.86);backdrop-filter:blur(8px);border-radius:9999px;padding:7px 16px;color:var(--champ-cloud,#D1D5DB);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:15;animation:ppFadeUp .22s both;pointer-events:none">{{ captionText }}</div>
+  </sc-if>
+
+  <!-- ============ STEER BAR (1b) ============ -->
+  <sc-if value="{{ isLive }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:min(520px,70vw);z-index:20;display:flex;flex-direction:column;align-items:center;gap:8px">
+
+      <sc-if value="{{ steerAppliedShown }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:7px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);border-radius:9999px;padding:5px 14px;color:var(--champ-verdant,#10B981);font-size:12.5px;animation:ppFadeUp .22s both">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+          Steering: {{ steerEcho }}
+        </div>
+      </sc-if>
+      <sc-if value="{{ steerFailedShown }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:9px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:9999px;padding:5px 8px 5px 14px;color:#F87171;font-size:12.5px;animation:ppFadeUp .22s both">
+          That steer didn't land.
+          <button onClick="{{ retrySteer }}" style="background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:9999px;padding:2px 10px;color:#F87171;font-size:12px;cursor:pointer;transition:all .12s" style-hover="background:rgba(239,68,68,0.15)">Try again</button>
+        </div>
+      </sc-if>
+
+      <div style="width:100%;display:flex;align-items:center;gap:8px;background:rgba(11,13,18,0.94);backdrop-filter:blur(8px);border:1px solid {{ steerBorderColor }};border-radius:10px;padding:6px 8px 6px 14px;box-shadow:0 8px 32px rgba(0,0,0,0.35);transition:border-color .12s">
+        <input type="text" value="{{ steerValue }}" onChange="{{ onSteerChange }}" onKeyDown="{{ steerKeyDown }}" onFocus="{{ steerFocus }}" onBlur="{{ steerBlur }}" placeholder="{{ steerPlaceholder }}" data-pp-steer="1" style="flex:1;background:transparent;border:none;outline:none;color:var(--champ-snow,#FAFAF7);font-size:13px">
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--champ-mist);letter-spacing:0.1em">/ TO FOCUS</span>
+        <button onClick="{{ submitSteer }}" title="Send steer (Enter)" style="width:28px;height:28px;flex:none;background:{{ steerSendBg }};border:none;border-radius:7px;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s" style-hover="background:var(--champ-ember-glow)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+        </button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ REVIEW PANEL (1h) ============ -->
+  <sc-if value="{{ isReview }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:14px;left:14px;display:flex;align-items:center;gap:8px;background:rgba(11,13,18,0.9);border-radius:9999px;padding:6px 14px;color:var(--champ-cloud);font-size:12.5px;z-index:15">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path></svg>
+      Reviewing. Canvas is still editable.
+    </div>
+
+    <div style="position:absolute;right:0;top:0;bottom:0;width:324px;background:var(--champ-ink,#0B0D12);border-left:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:18px;padding:24px 22px;color:var(--champ-snow);overflow-y:auto">
+      <div>
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist)">SESSION REVIEW</div>
+        <div style="font-family:var(--font-display);font-weight:600;font-size:18px;margin-top:6px;letter-spacing:-0.01em">{{ reviewTitle }}</div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--champ-mist);margin-top:4px">{{ reviewMeta }}</div>
+      </div>
+
+      <div>
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-ember);margin-bottom:10px">WHAT GOT DECIDED</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="0">
+            <div style="display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.45;color:var(--champ-cloud)">
+              <svg style="flex:none;margin-top:2px" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+              {{ d.text }}
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;color:var(--champ-mist);margin-bottom:8px">SUMMARY</div>
+        <div style="font-size:13px;line-height:1.6;color:var(--champ-cloud)">{{ reviewSummary }}</div>
+        <div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.1em;color:var(--champ-mist);margin-top:8px;opacity:.7">PROPOSED · NEEDS A SUMMARY TURN SERVER-SIDE</div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button onClick="{{ noop }}" style="flex:1;height:32px;background:transparent;border:1px solid rgba(255,255,255,0.14);border-radius:8px;color:var(--champ-cloud);font-size:12.5px;cursor:pointer;transition:all .12s" style-hover="border-color:var(--champ-ember);color:var(--champ-snow)">PNG</button>
+        <button onClick="{{ noop }}" style="flex:1;height:32px;background:transparent;border:1px solid rgba(255,255,255,0.14);border-radius:8px;color:var(--champ-cloud);font-size:12.5px;cursor:pointer;transition:all .12s" style-hover="border-color:var(--champ-ember);color:var(--champ-snow)">SVG</button>
+        <button onClick="{{ noop }}" style="flex:1;height:32px;background:transparent;border:1px solid rgba(255,255,255,0.14);border-radius:8px;color:var(--champ-cloud);font-size:12.5px;cursor:pointer;transition:all .12s" style-hover="border-color:var(--champ-ember);color:var(--champ-snow)">Copy summary</button>
+      </div>
+
+      <button disabled="{{ true }}" style="height:32px;background:transparent;border:1px dashed rgba(255,255,255,0.1);border-radius:8px;color:var(--champ-mist);font-size:12px;cursor:default">Browse snapshots · soon</button>
+
+      <div style="flex:1"></div>
+
+      <button onClick="{{ newSession }}" style="height:44px;background:var(--champ-ember);border:none;border-radius:8px;color:#fff;font-family:var(--font-display);font-weight:600;font-size:14.5px;cursor:pointer;box-shadow:0 0 24px rgba(255,107,53,0.3);transition:all .22s cubic-bezier(0.34,1.56,0.64,1)" style-hover="background:var(--champ-ember-glow);transform:translateY(-1px);box-shadow:0 0 32px rgba(255,107,53,0.5)">New session</button>
+    </div>
+  </sc-if>
+
+  <!-- ============ DEMO CONTROLS ============ -->
+  <sc-if value="{{ demoShown }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:20px;right:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;z-index:20">
+      <button onClick="{{ demoMcq }}" style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.08em;background:rgba(11,13,18,0.6);border:1px solid rgba(255,255,255,0.12);border-radius:9999px;padding:4px 11px;color:rgba(250,250,247,0.6);cursor:pointer;transition:all .12s" style-hover="color:#fff;border-color:var(--champ-ember)">DEMO · ASK MCQ</button>
+      <button onClick="{{ demoFreeform }}" style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.08em;background:rgba(11,13,18,0.6);border:1px solid rgba(255,255,255,0.12);border-radius:9999px;padding:4px 11px;color:rgba(250,250,247,0.6);cursor:pointer;transition:all .12s" style-hover="color:#fff;border-color:var(--champ-ember)">DEMO · ASK FREEFORM</button>
+      <button onClick="{{ demoFailSteer }}" style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.08em;background:rgba(11,13,18,0.6);border:1px solid rgba(255,255,255,0.12);border-radius:9999px;padding:4px 11px;color:rgba(250,250,247,0.6);cursor:pointer;transition:all .12s" style-hover="color:#fff;border-color:var(--champ-ember)">{{ demoFailLabel }}</button>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: &quot;100%&quot;, &quot;height&quot;: &quot;100%&quot;}, &quot;demoControls&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Prototype&quot;, &quot;description&quot;: &quot;Show the demo chips that trigger question cards and steer failure&quot;}, &quot;captionsOn&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Session&quot;, &quot;description&quot;: &quot;Live captions shown by default during Listening&quot;}}">
+class Component extends DCLogic {
+  state = {
+    phase: "setup", // setup | listening | paused | review
+    intent: "",
+    multi: false,
+    restoredText: "",
+    clock: 0,
+    cost: 0.021,
+    turnCount: 0,
+    statusText: "listening",
+    zoneText: "",
+    boxes: [], arrows: [], notes: [], texts: [],
+    caption: "",
+    captionAt: 0,
+    question: null, // {id, question, options[], answered, echo, secsLeft}
+    qCustom: "",
+    steerValue: "",
+    steerFocused: false,
+    steerState: "idle", // idle | applied | failed
+    steerEcho: "",
+    failNext: false,
+    drawerOpen: false,
+    captionsOverride: null,
+    settingsOpen: false,
+    warmState: "warm", // warm | warming
+    agentProvider: "groq",
+    agentModel: "llama-3.3-70b-versatile",
+    sttProvider: "moonshine",
+    sttModel: "medium",
+    micDevice: "MacBook Pro Microphone",
+    panelTheme: "dark",
+    canvasPalette: "champions",
+    placeholderIdx: 0,
+    simIdx: 0,
+  };
+
+  timers = [];
+  t(ms, fn) { const id = setTimeout(fn, ms); this.timers.push(id); return id; }
+
+  componentDidMount() {
+    this.clockInt = setInterval(() => {
+      if (this.state.phase === "listening") this.setState(s => ({ clock: s.clock + 1 }));
+    }, 1000);
+    this.phInt = setInterval(() => {
+      this.setState(s => ({ placeholderIdx: (s.placeholderIdx + 1) % 5 }));
+    }, 4000);
+    this.qInt = setInterval(() => {
+      const q = this.state.question;
+      if (!q || q.answered || this.state.phase !== "listening") return;
+      const left = Math.max(0, q.secsLeft - 0.25);
+      if (left <= 0) { this.skipQuestion(); return; }
+      this.setState({ question: { ...q, secsLeft: left } });
+    }, 250);
+    this.capInt = setInterval(() => {
+      if (this.state.caption && Date.now() - this.state.captionAt > 4500) {
+        this.setState({ caption: "" });
+      }
+    }, 500);
+    this.keyHandler = (e) => {
+      if (e.key === "/" && this.state.phase === "listening" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        document.querySelector('[data-pp-steer]')?.focus();
+      }
+      if (e.key === "Escape" && this.state.question) this.skipQuestion();
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && (this.state.phase === "listening" || this.state.phase === "paused")) {
+        e.preventDefault(); this.undoTurn();
+      }
+    };
+    window.addEventListener("keydown", this.keyHandler);
+  }
+
+  componentWillUnmount() {
+    this.timers.forEach(clearTimeout);
+    [this.clockInt, this.phInt, this.qInt, this.capInt].forEach(clearInterval);
+    window.removeEventListener("keydown", this.keyHandler);
+  }
+
+  // ---------- canvas element helpers ----------
+  addBox(x, y, w, h, label, fill, turn) {
+    const rot = ((x + y) % 5 - 2) * 0.35;
+    this.setState(s => ({ boxes: [...s.boxes, { id: `b${x}${y}`, left: x, top: y, w, h, label, fill, rot, turn }] }));
+  }
+  addNote(x, y, w, label, fill, turn) {
+    const rot = ((x % 7) - 3) * 0.6;
+    this.setState(s => ({ notes: [...s.notes, { id: `n${x}${y}`, left: x, top: y, w, label, fill, rot, turn }] }));
+  }
+  addText(x, y, fs, label, turn) {
+    this.setState(s => ({ texts: [...s.texts, { id: `t${x}${y}`, left: x, top: y, fs, label, turn }] }));
+  }
+  addArrow(x1, y1, x2, y2, turn) {
+    const pad = 8;
+    const left = Math.min(x1, x2) - pad, top = Math.min(y1, y2) - pad;
+    const ax = x1 - left, ay = y1 - top, bx = x2 - left, by = y2 - top;
+    const mx = (ax + bx) / 2 + (by - ay) * 0.08, my = (ay + by) / 2 - (bx - ax) * 0.08;
+    const d = `M ${ax} ${ay} Q ${mx} ${my} ${bx} ${by}`;
+    const ang = Math.atan2(by - my, bx - mx);
+    const h1x = bx - 9 * Math.cos(ang - 0.45), h1y = by - 9 * Math.sin(ang - 0.45);
+    const h2x = bx - 9 * Math.cos(ang + 0.45), h2y = by - 9 * Math.sin(ang + 0.45);
+    const hd = `M ${h1x} ${h1y} L ${bx} ${by} L ${h2x} ${h2y}`;
+    this.setState(s => ({ arrows: [...s.arrows, { id: `a${x1}${y1}${x2}`, left, top, w: Math.abs(x2 - x1) + pad * 2, h: Math.abs(y2 - y1) + pad * 2, d, hd, turn }] }));
+  }
+  bumpTurn(n) {
+    this.setState(s => ({ turnCount: s.turnCount + 1, cost: s.cost + 0.004 }));
+  }
+  setCaption(text) { this.setState({ caption: text, captionAt: Date.now() }); }
+
+  // ---------- lifecycle ----------
+  startListening = () => {
+    this.setState({ phase: "listening", statusText: "listening", drawerOpen: false });
+    this.runSim();
+  };
+  pauseSession = () => {
+    this.timers.forEach(clearTimeout); this.timers = [];
+    this.setState({ phase: "paused", statusText: "holding", caption: "" });
+  };
+  resumeSession = () => {
+    this.setState({ phase: "listening", statusText: "listening" });
+    this.runSim();
+  };
+  endSession = () => {
+    this.timers.forEach(clearTimeout); this.timers = [];
+    this.setState({ phase: "review", drawerOpen: false, caption: "", question: null, statusText: "" });
+  };
+  newSession = () => {
+    this.timers.forEach(clearTimeout); this.timers = [];
+    this.setState({
+      phase: "setup", clock: 0, cost: 0.021, turnCount: 0, simIdx: 0,
+      boxes: [], arrows: [], notes: [], texts: [], zoneText: "", caption: "",
+      question: null, steerState: "idle", steerValue: "", restoredText: "",
+    });
+  };
+  restoreSession = () => {
+    this.setState({ boxes: [], arrows: [], notes: [], texts: [], restoredText: "RESTORED · YESTERDAY 4:12 PM · 9 DRAWINGS" });
+    this.addBox(500, 180, 190, 60, "Renewal objections", "#FFFFFF", 0);
+    this.addNote(760, 160, 150, "Pricing vs value", "#FEF3C7", 0);
+    this.addNote(760, 240, 150, "Champion left in March", "#FEF3C7", 0);
+    this.addArrow(690, 210, 758, 195, 0);
+  };
+
+  // ---------- simulation ----------
+  simScript() {
+    return [
+      { gap: 900, fn: () => this.setCaption("so the goal for Q3 is 3 pilot customers in mid-market") },
+      { gap: 1700, fn: () => this.setState({ statusText: "thinking" }) },
+      { gap: 900, fn: () => {
+        this.setState({ statusText: "drawing the plan", zoneText: "STRUCTURED" });
+        this.addBox(470, 150, 170, 60, "Q3 goal", "#FFFFFF", 1);
+        this.addBox(720, 150, 195, 60, "3 pilot customers", "#FFEDD5", 1);
+        this.addArrow(640, 180, 718, 180, 1);
+        this.bumpTurn();
+      }},
+      { gap: 2200, fn: () => this.setCaption("Priya owns onboarding, Marco takes the security audit") },
+      { gap: 1800, fn: () => {
+        this.setState({ statusText: "drawing owners" });
+        this.addBox(430, 300, 180, 56, "Onboarding · Priya", "#FFFFFF", 2);
+        this.addBox(680, 300, 180, 56, "Security audit", "#FFFFFF", 2);
+        this.addArrow(530, 210, 515, 298, 2);
+        this.addArrow(600, 210, 750, 298, 2);
+        this.bumpTurn();
+      }},
+      { gap: 1300, fn: () => this.askQuestion("q-audit", "Who owns the security audit?", ["Marco", "Priya", "An external firm"]) },
+      { gap: 3600, fn: () => this.setCaption("the big risks are licence cost and honestly the timeline") },
+      { gap: 1900, fn: () => {
+        this.setState({ statusText: "capturing risks" });
+        this.addNote(950, 280, 150, "Risk: licence cost", "#FEF3C7", 3);
+        this.addNote(960, 360, 150, "Risk: timeline", "#FEF3C7", 3);
+        this.bumpTurn();
+      }},
+      { gap: 2400, fn: () => this.setState({ statusText: "listening" }) },
+      { gap: 3600, fn: () => this.setCaption("let's lock the dates with finance next week") },
+      { gap: 1900, fn: () => {
+        this.setState({ statusText: "drawing next steps" });
+        this.addBox(560, 440, 230, 56, "Lock dates · finance · next week", "#FFFFFF", 4);
+        this.addArrow(520, 358, 600, 438, 4);
+        this.bumpTurn();
+      }},
+      { gap: 3000, fn: () => this.askQuestion("q-title", "Name this plan. One short phrase for the canvas title.", []) },
+      { gap: 3000, fn: () => this.setState({ statusText: "listening" }) },
+    ];
+  }
+  runSim() {
+    const step = () => {
+      const script = this.simScript();
+      const i = this.state.simIdx;
+      if (i >= script.length || this.state.phase !== "listening") return;
+      this.t(script[i].gap, () => {
+        if (this.state.phase !== "listening") return;
+        script[i].fn();
+        this.setState(s => ({ simIdx: s.simIdx + 1 }), step);
+      });
+    };
+    step();
+  }
+
+  // ---------- settings ----------
+  AGENT_MODELS = {
+    groq: ["llama-3.3-70b-versatile", "llama-3.3-70b-specdec", "llama-3.1-8b-instant", "qwen-2.5-32b", "deepseek-r1-distill-llama-70b"],
+    cerebras: ["llama-3.3-70b", "llama3.1-70b", "llama3.1-8b", "qwen-3-32b"],
+    openrouter: ["deepseek/deepseek-v4-flash", "anthropic/claude-3.5-sonnet", "openai/gpt-5.5", "google/gemini-2.5-pro", "meta-llama/llama-3.3-70b-instruct"],
+    openai: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
+    ollama: ["llama3.2", "qwen2.5"],
+    codex: ["gpt-5.5-fast", "gpt-5.5", "gpt-5.4"],
+  };
+  STT_MODELS = { moonshine: ["tiny", "small", "medium"], openai: ["gpt-realtime-whisper", "gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"] };
+  rewarm() {
+    if (this.rewarmT) clearTimeout(this.rewarmT);
+    this.setState({ warmState: "warming" });
+    this.rewarmT = setTimeout(() => this.setState({ warmState: "warm" }), 1800);
+  }
+  changeSetting(patch) { this.setState(patch); this.rewarm(); }
+
+  // ---------- questions ----------
+  askQuestion(id, question, options) {
+    this.setState({ question: { id, question, options, answered: false, echo: "", secsLeft: 20 }, qCustom: "" });
+  }
+  answerQuestion = (text) => {
+    const q = this.state.question;
+    if (!q || q.answered) return;
+    if (q.id === "q-audit") {
+      this.setState(s => ({ boxes: s.boxes.map(b => b.label === "Security audit" ? { ...b, label: "Security audit · " + text } : b) }));
+    }
+    if (q.id === "q-title") this.addText(470, 80, 30, text, 0);
+    this.setState({ question: { ...q, answered: true, echo: text }, statusText: "drawing" });
+    this.t(1400, () => this.setState({ question: null }));
+  };
+  skipQuestion = () => {
+    if (!this.state.question) return;
+    this.setState({ question: null, statusText: "using its best guess" });
+    this.t(2200, () => this.setState(s => s.phase === "listening" ? { statusText: "listening" } : null));
+  };
+  demoMcq = () => this.askQuestion("q-demo1", "Two threads are live: pilots and pricing. Which one should the canvas follow?", ["Pilots", "Pricing", "Both, split the canvas"]);
+  demoFreeform = () => this.askQuestion("q-demo2", "You said \"the Sunil situation\". Who or what is Sunil? A person, a team, or a project?", []);
+  demoFailSteer = () => this.setState(s => ({ failNext: !s.failNext }));
+
+  // ---------- steer ----------
+  submitSteer = () => {
+    const text = this.state.steerValue.trim();
+    if (!text) return;
+    const fail = this.state.failNext;
+    this.setState({ steerValue: "", steerEcho: text, steerState: fail ? "failed" : "applied", failNext: false });
+    if (!fail) {
+      this.setState({ statusText: "steering: " + (text.length > 32 ? text.slice(0, 30) + "…" : text) });
+      this.t(3000, () => this.setState(s => s.steerState === "applied" ? { steerState: "idle" } : null));
+      this.t(3600, () => this.setState(s => s.phase === "listening" ? { statusText: "listening" } : null));
+    }
+  };
+  retrySteer = () => {
+    this.setState(s => ({ steerValue: s.steerEcho, steerState: "idle" }));
+    this.t(50, () => document.querySelector('[data-pp-steer]')?.focus());
+  };
+
+  renderVals() {
+    const s = this.state;
+    const props = this.props;
+    const isSetup = s.phase === "setup";
+    const isListening = s.phase === "listening";
+    const isPaused = s.phase === "paused";
+    const isReview = s.phase === "review";
+    const captionsEnabled = s.captionsOverride ?? (props.captionsOn ?? true);
+    const q = s.question;
+    const letters = ["A", "B", "C", "D", "E", "F"];
+    const qOptions = (q?.options || []).map((text, i) => {
+      const sel = q.answered && q.echo === text;
+      return {
+        letter: letters[i], text,
+        bg: sel ? "rgba(255,107,53,0.15)" : "var(--champ-ink,#0B0D12)",
+        border: sel ? "var(--champ-ember)" : "rgba(255,255,255,0.1)",
+        badgeBg: sel ? "var(--champ-ember)" : "transparent",
+        badgeBorder: sel ? "var(--champ-ember)" : "rgba(255,255,255,0.2)",
+        badgeColor: sel ? "#fff" : "var(--champ-mist,#6B7280)",
+        pick: () => this.answerQuestion(text),
+      };
+    });
+    const freeform = q && (!q.options || q.options.length === 0);
+    const mm = Math.floor(s.clock / 60), ss = String(s.clock % 60).padStart(2, "0");
+    const placeholders = [
+      "Whisper a steer… \u201cgroup these by owner\u201d",
+      "Whisper a steer… \u201cuse a flowchart instead\u201d",
+      "Whisper a steer… \u201chighlight the risks\u201d",
+      "Whisper a steer… \u201czoom into the timeline\u201d",
+      "Whisper a steer… \u201cdrop the licence node\u201d",
+    ];
+    return {
+      // phases
+      isSetup, isListening, isPaused, isReview,
+      isLive: isListening || isPaused,
+      showCanvasHint: isSetup && s.boxes.length === 0 && s.notes.length === 0,
+      // setup
+      intent: s.intent,
+      onIntent: (e) => this.setState({ intent: e.target.value }),
+      multi: s.multi,
+      toggleMulti: (e) => this.setState({ multi: e.target.checked }),
+      restoreSession: this.restoreSession,
+      restoredText: s.restoredText,
+      startListening: this.startListening,
+      // settings
+      settingsOpen: s.settingsOpen && isSetup,
+      openSettings: () => this.setState({ settingsOpen: true }),
+      closeSettings: () => this.setState({ settingsOpen: false }),
+      agentProvider: s.agentProvider,
+      setAgentProvider: (e) => { const p = e.target.value; this.changeSetting({ agentProvider: p, agentModel: this.AGENT_MODELS[p][0] }); },
+      agentModel: s.agentModel,
+      agentModelOptions: this.AGENT_MODELS[s.agentProvider],
+      setAgentModel: (e) => this.changeSetting({ agentModel: e.target.value }),
+      touchSettings: () => this.rewarm(),
+      sttSegs: [
+        { key: "moonshine", label: "Local", sub: "free · runs on this Mac" },
+        { key: "openai", label: "Cloud", sub: "very accurate · paid" },
+      ].map(g => ({
+        ...g,
+        bg: s.sttProvider === g.key ? "var(--champ-slate,#1E222D)" : "transparent",
+        color: s.sttProvider === g.key ? "var(--champ-snow,#FAFAF7)" : "var(--champ-mist,#6B7280)",
+        pick: () => this.changeSetting({ sttProvider: g.key, sttModel: this.STT_MODELS[g.key][g.key === "moonshine" ? 2 : 0] }),
+      })),
+      sttModel: s.sttModel,
+      sttModelOptions: this.STT_MODELS[s.sttProvider],
+      setSttModel: (e) => this.changeSetting({ sttModel: e.target.value }),
+      sttHelp: s.sttProvider === "moonshine" ? "Runs on this Mac. Free. Names come out mediocre." : "Cloud, low latency, nails names. Costs money per minute.",
+      micDevice: s.micDevice,
+      setMicDevice: (e) => this.changeSetting({ micDevice: e.target.value }),
+      themeSegs: ["dark", "light"].map(k => ({
+        label: k === "dark" ? "Dark" : "Light",
+        bg: s.panelTheme === k ? "var(--champ-slate,#1E222D)" : "transparent",
+        color: s.panelTheme === k ? "var(--champ-snow,#FAFAF7)" : "var(--champ-mist,#6B7280)",
+        pick: () => this.changeSetting({ panelTheme: k }),
+      })),
+      paletteSwatches: [
+        { name: "Champions", key: "champions", hex: "#FF6B35" },
+        { name: "Cool", key: "cool", hex: "#3B82F6" },
+        { name: "Warm", key: "warm", hex: "#F59E0B" },
+        { name: "Mono", key: "mono", hex: "#6B7280" },
+      ].map(p => ({ ...p, ring: s.canvasPalette === p.key ? "var(--champ-snow,#FAFAF7)" : "transparent", pick: () => this.changeSetting({ canvasPalette: p.key }) })),
+      // readiness glyph
+      readyDotColor: s.warmState === "warm" ? "var(--champ-verdant,#10B981)" : "var(--champ-amber,#F59E0B)",
+      readyDotAnim: s.warmState === "warm" ? "none" : "ppPulse 1.2s ease-in-out infinite",
+      readyText: this.readyLine(),
+      // canvas
+      boxes: s.boxes, arrows: s.arrows, notes: s.notes, texts: s.texts,
+      // strip
+      stateLabel: isPaused ? "Paused" : "Listening",
+      stateDotColor: isPaused ? "var(--champ-mist,#6B7280)" : "var(--champ-ember,#FF6B35)",
+      stateDotAnim: isPaused ? "none" : "ppPulse 2s ease-in-out infinite",
+      stateDotGlow: isPaused ? "none" : "0 0 12px rgba(255,107,53,0.6)",
+      clockText: `${mm}:${ss}`,
+      statusText: s.statusText,
+      zoneText: s.zoneText,
+      pauseSession: this.pauseSession,
+      resumeSession: this.resumeSession,
+      endSession: this.endSession,
+      undoTurn: this.undoTurn,
+      costText: `$${s.cost.toFixed(2)} ···`,
+      toggleDrawer: () => this.setState(st => ({ drawerOpen: !st.drawerOpen })),
+      drawerOpen: s.drawerOpen && (isListening || isPaused),
+      costAgentText: `$${s.cost.toFixed(3)}`,
+      turnCountText: String(s.turnCount),
+      captionsEnabled,
+      toggleCaptions: (e) => this.setState({ captionsOverride: e.target.checked }),
+      // captions
+      captionShown: Boolean(s.caption) && captionsEnabled && isListening,
+      captionText: s.caption,
+      // question
+      hasQuestion: Boolean(q),
+      qEyebrow: freeform ? "QUICK QUESTION · TYPE IT" : "QUICK QUESTION · TAP ONE",
+      qText: q?.question || "",
+      qOptions,
+      qShowOptions: Boolean(q) && !freeform && !q.answered,
+      qShowInput: Boolean(q) && !q.answered,
+      qAnswered: Boolean(q?.answered),
+      qAnswerEcho: q?.echo || "",
+      qCountdownText: q && !q.answered ? `${Math.ceil(q.secsLeft)}s` : "",
+      qBarPct: q ? (q.answered ? 100 : (q.secsLeft / 20) * 100) : 0,
+      qCustom: s.qCustom,
+      onQCustom: (e) => this.setState({ qCustom: e.target.value }),
+      qCustomKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); this.submitQCustomFn(); } },
+      submitQCustom: () => this.submitQCustomFn(),
+      qInputPlaceholder: freeform ? "Type a short answer and press Enter" : "Or type your own answer",
+      qInputHeight: freeform ? 40 : 32,
+      skipQuestion: this.skipQuestion,
+      // steer
+      steerValue: s.steerValue,
+      onSteerChange: (e) => this.setState({ steerValue: e.target.value }),
+      steerKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); this.submitSteer(); } },
+      steerFocus: () => this.setState({ steerFocused: true }),
+      steerBlur: () => this.setState({ steerFocused: false }),
+      steerPlaceholder: placeholders[s.placeholderIdx],
+      steerBorderColor: s.steerFocused || s.steerValue ? "var(--champ-ember,#FF6B35)" : "rgba(255,255,255,0.1)",
+      steerSendBg: s.steerValue.trim() ? "var(--champ-ember,#FF6B35)" : "#2A2F3D",
+      submitSteer: this.submitSteer,
+      steerAppliedShown: s.steerState === "applied",
+      steerFailedShown: s.steerState === "failed",
+      steerEcho: s.steerEcho.length > 44 ? s.steerEcho.slice(0, 42) + "…" : s.steerEcho,
+      retrySteer: this.retrySteer,
+      // review
+      reviewTitle: s.texts.length ? s.texts[0].label : (s.intent.trim() || "Q3 plan · Lake Stream"),
+      reviewMeta: `${Math.max(1, Math.round(s.clock / 60))} MIN · $${s.cost.toFixed(2)} · ${s.turnCount} DRAWINGS`,
+      decisions: [
+        { text: this.decidedAudit() },
+        { text: "3 pilot customers in mid-market by end of Q3" },
+        { text: "Dates locked with finance next week" },
+      ],
+      reviewSummary: "The session converged on a Q3 pilot plan. Priya runs onboarding, the security audit has an owner, and licence cost plus timeline are flagged as the 2 live risks. Finance locks dates next week.",
+      newSession: this.newSession,
+      noop: () => {},
+      // demo
+      demoShown: (props.demoControls ?? true) && (isListening || isPaused),
+      demoMcq: this.demoMcq,
+      demoFreeform: this.demoFreeform,
+      demoFailSteer: this.demoFailSteer,
+      demoFailLabel: s.failNext ? "DEMO · NEXT STEER FAILS · ON" : "DEMO · FAIL NEXT STEER",
+      rootKeyDown: () => {},
+    };
+  }
+
+  readyLine() {
+    const s = this.state;
+    const mic = s.micDevice.startsWith("AirPods") ? "AIRPODS" : s.micDevice.startsWith("Studio") ? "STUDIO DISPLAY MIC" : "MACBOOK MIC";
+    const stt = s.sttProvider === "moonshine" ? "LOCAL TRANSCRIPTION" : "CLOUD TRANSCRIPTION";
+    return s.warmState === "warm" ? `AGENT WARM · ${mic} · ${stt}` : `RE-WARMING · STILL FINE TO START · ${mic}`;
+  }
+  submitQCustomFn() {
+    const text = this.state.qCustom.trim();
+    if (!text) return;
+    this.answerQuestion(text);
+    this.setState({ qCustom: "" });
+  }
+  decidedAudit() {
+    const b = this.state.boxes.find(x => x.label.startsWith("Security audit ·"));
+    return b ? b.label.replace("Security audit · ", "") + " owns the security audit" : "Marco owns the security audit";
+  }
+  undoTurn = () => {
+    this.setState(s => {
+      const all = [...s.boxes, ...s.arrows, ...s.notes].map(e => e.turn || 0);
+      const maxTurn = Math.max(0, ...all);
+      if (maxTurn === 0) return { statusText: "nothing to undo" };
+      return {
+        boxes: s.boxes.filter(b => (b.turn || 0) !== maxTurn),
+        arrows: s.arrows.filter(a => (a.turn || 0) !== maxTurn),
+        notes: s.notes.filter(n => (n.turn || 0) !== maxTurn),
+        statusText: "undid the last drawing",
+      };
+    });
+    this.t(2000, () => this.setState(s => s.phase === "listening" ? { statusText: "listening" } : null));
+  };
+}
+
+</script>
+</body>
+</html>
