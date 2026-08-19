@@ -1,6 +1,6 @@
 {
   "name": "champpreso",
-  "version": "0.14.0",
+  "version": "0.1.8",
   "description": "ChampPreso: realtime visual brainstorming partner. v0.6 adds Groq (400-800 tok/s) + Cerebras (2000+ tok/s) as fast-lane agent providers. Plus Mermaid integration (14 diagram types), Aegis design, pattern library, icon vocab, confidence questions, Quick Action chips, UI Settings drawer, OpenRouter/Ollama, mid-session steering.",
   "license": "MIT",
   "author": "Sreedeep Surapaneni <deep@championsmail.com>",
