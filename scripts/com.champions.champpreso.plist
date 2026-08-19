@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.champions.champpreso</string>
+
+  <!-- Absolute path to node: launchd does not read your shell profile, so a
+       bare "node" would not resolve. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/deep/Apps&amp;Projects/Champ-preso/src/cli.js</string>
+    <string>--no-open</string>
+    <string>--port</string>
+    <string>4175</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/deep/Apps&amp;Projects/Champ-preso</string>
+
+  <!-- Start at login, so a reboot brings it back with no intervention. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart whenever it exits, for any reason. This is the "it just turns
+       off" fix: a crash, an OOM kill, or a stray pkill all get undone. -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Wait 10s between restarts so a genuinely broken build fails visibly in
+       the log instead of spinning the CPU in a restart loop. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/deep/Library/Logs/champpreso.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/deep/Library/Logs/champpreso.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Homebrew first: launchd's default PATH is /usr/bin:/bin:/usr/sbin:/sbin
+         and would not find node or any npx-launched MCP server. -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/deep</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+
+  <!-- Nice-level 0: this is an interactive app, not a batch job. -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
