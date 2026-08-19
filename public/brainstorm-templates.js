@@ -80,6 +80,109 @@ const VIOLET = "#e5dbff";
 const ORANGE = "#ffe8cc";
 const GRAY = "#f1f3f5";
 
+// Builds a canvas skeleton carrying last session's decisions into the next
+// one: a header plus one sticky per decision. Ids use the tpl- prefix so the
+// carried block behaves like any template skeleton (swapped out when a
+// template is picked, removed by Clear).
+export function buildCarryoverElements(decisions) {
+  const items = (Array.isArray(decisions) ? decisions : [])
+    .map((d) => String(d ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  if (items.length === 0) return [];
+  const idBase = `${TEMPLATE_ELEMENT_ID_PREFIX}carryover`;
+  /** @type {any[]} */
+  const elements = [textEl(`${idBase}-title`, 60, 40, "Carried from last session", 26)];
+  const STICKY_W = 420;
+  const PAD = 14;
+  const LINE = 22;
+  const CHARS_PER_LINE = 34;
+  let y = 100;
+  items.forEach((text, i) => {
+    const lines = wrapText(text, CHARS_PER_LINE);
+    const boxH = PAD * 2 + lines.length * LINE;
+    elements.push({
+      type: "rectangle",
+      id: `${idBase}-box-${i}`,
+      x: 60,
+      y,
+      width: STICKY_W,
+      height: boxH,
+      backgroundColor: YELLOW,
+      fillStyle: "solid",
+      strokeColor: "#adb5bd",
+      roundness: { type: 3 },
+    });
+    elements.push({
+      type: "text",
+      id: `${idBase}-text-${i}`,
+      x: 60 + PAD,
+      y: y + PAD,
+      width: STICKY_W - PAD * 2,
+      height: lines.length * LINE,
+      text: lines.join("\n"),
+      fontSize: 15,
+      fontFamily: 1,
+      strokeColor: INK,
+    });
+    y += boxH + 16;
+  });
+  return elements;
+}
+
+function wrapText(text, charsPerLine) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    if (current && current.length + 1 + word.length > charsPerLine) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+// Converts the current scene into custom-template elements: live elements
+// re-id'd under the tpl-custom-<templateId>- prefix, with every cross-element
+// reference (bound text containers, arrow bindings, frames) rewritten to the
+// new ids so the structure survives round-tripping through settings.json and
+// back onto a fresh canvas.
+export function sceneToTemplateElements(templateId, sceneElements) {
+  const prefix = `${TEMPLATE_ELEMENT_ID_PREFIX}custom-${templateId}-`;
+  const live = (Array.isArray(sceneElements) ? sceneElements : []).filter(
+    (el) => el && !el.isDeleted,
+  );
+  const idMap = new Map(live.map((el, i) => [el.id, `${prefix}${i}`]));
+  return live.map((el) => {
+    const next = { ...el, id: idMap.get(el.id) };
+    if (el.containerId) next.containerId = idMap.get(el.containerId) ?? el.containerId;
+    if (el.frameId) next.frameId = idMap.get(el.frameId) ?? null;
+    if (Array.isArray(el.boundElements)) {
+      next.boundElements = el.boundElements.map((b) => ({
+        ...b,
+        id: idMap.get(b.id) ?? b.id,
+      }));
+    }
+    if (el.startBinding?.elementId) {
+      next.startBinding = {
+        ...el.startBinding,
+        elementId: idMap.get(el.startBinding.elementId) ?? el.startBinding.elementId,
+      };
+    }
+    if (el.endBinding?.elementId) {
+      next.endBinding = {
+        ...el.endBinding,
+        elementId: idMap.get(el.endBinding.elementId) ?? el.endBinding.elementId,
+      };
+    }
+    return next;
+  });
+}
+
 export const BRAINSTORM_TEMPLATES = [
   {
     id: "product-brainstorm",
