@@ -19,6 +19,7 @@ import {
 import { createGroqTranscription as createDefaultGroqTranscription } from "./groq-transcription.js";
 import { createKnowledgeBase } from "./knowledge-base.js";
 import { createMcpToolset } from "./mcp-client.js";
+import { createModelCatalog } from "./model-catalog.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
 import { describeWhiteboard } from "./whiteboard-semantics.js";
@@ -141,6 +142,13 @@ export async function startServer(options) {
   // Non-blocking: a slow or broken MCP server must never delay server start.
   mcpToolset.connect().catch((error) => console.warn(`[mcp] connect failed: ${error.message}`));
 
+  // Live model catalog. Model slugs go stale and fail only at request time, so
+  // the pickers read from the provider rather than from a hand-edited list.
+  const modelCatalog = createModelCatalog({
+    fetchImpl: options.modelCatalogFetch ?? globalThis.fetch,
+    log: console,
+  });
+
   // Rolling ask conversation, kept entirely apart from state.agentHistory so
   // the drawing agent's cached prompt prefix stays byte-identical.
   const askHistory = [];
@@ -156,6 +164,37 @@ export async function startServer(options) {
   app.get("/api/settings", async (_req, res) => {
     if (!options.settingsStore) return res.status(404).json({ error: "Settings store not available." });
     res.json(await options.settingsStore.getSanitized());
+  });
+
+  // ===== MODEL CATALOG =====
+  // What models can this provider actually serve, right now? Hardcoded lists
+  // rot silently - a retired slug passes tests and typecheck, then kills a live
+  // session with "No endpoints found". These two endpoints exist so the picker
+  // reads reality instead of a list somebody last edited months ago.
+  //
+  // Neither can fail in a way that breaks the settings sheet: the catalog
+  // degrades through cache -> stale cache -> bundled fallback, and always
+  // returns 200 with a usable list plus the provenance in `source`.
+  async function apiKeyFor(provider) {
+    if (!options.settingsStore) return "";
+    const settings = await options.settingsStore.load();
+    return (settings.apiKeys?.[provider] ?? "").trim();
+  }
+
+  app.get("/api/models", async (req, res) => {
+    const requested = String(req.query.provider ?? "").trim();
+    let provider = requested;
+    if (!provider && options.settingsStore) {
+      provider = (await options.settingsStore.load()).agent?.provider ?? "openrouter";
+    }
+    provider = provider || "openrouter";
+    res.json(await modelCatalog.list(provider, { apiKey: await apiKeyFor(provider) }));
+  });
+
+  app.get("/api/models/verify", async (req, res) => {
+    const provider = String(req.query.provider ?? "openrouter").trim() || "openrouter";
+    const model = String(req.query.model ?? "").trim();
+    res.json(await modelCatalog.verify(provider, model, { apiKey: await apiKeyFor(provider) }));
   });
 
   app.post("/api/session/reset", (_req, res) => {

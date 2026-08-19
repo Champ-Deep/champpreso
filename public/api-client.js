@@ -23,6 +23,21 @@ async function request(path, options = {}) {
   return payload;
 }
 
+// Live model catalog. The server degrades internally (live -> cache ->
+// stale cache -> bundled fallback) and always answers 200 with a usable list,
+// so callers get models even when the provider is unreachable.
+export function listModels(provider) {
+  return request(`/api/models?provider=${encodeURIComponent(provider)}`);
+}
+
+// Is this model still real? `known: null` means we could not check - do not
+// render that as a problem.
+export function verifyModel(provider, model) {
+  return request(
+    `/api/models/verify?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`,
+  );
+}
+
 export function getConfig() {
   return request("/api/config");
 }

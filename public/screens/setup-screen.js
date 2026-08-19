@@ -36,6 +36,11 @@ import {
   ASK_MODELS,
   REASONING_EFFORTS,
 } from "../model-catalog.js";
+import {
+  describeModel,
+  useModelCatalog,
+  useModelWarning,
+} from "../use-model-catalog.js";
 
 const h = React.createElement;
 
@@ -722,17 +727,23 @@ function SettingsSheet({
                   placeholder: "e.g. llama3.2",
                   onChange: (e) => onSaveAgentModel(e.target.value),
                 })
-              : h(
-                  "select",
-                  {
-                    className: "ss-select",
+              : LIVE_CATALOG_PROVIDERS.has(agentProvider)
+                ? h(ModelCombobox, {
+                    provider: agentProvider,
                     value: agentModel,
-                    onChange: (e) => onSaveAgentModel(e.target.value),
-                  },
-                  ensureOption(agentModelOptions, agentModel).map((m) =>
-                    h("option", { key: m, value: m }, m),
+                    onCommit: onSaveAgentModel,
+                  })
+                : h(
+                    "select",
+                    {
+                      className: "ss-select",
+                      value: agentModel,
+                      onChange: (e) => onSaveAgentModel(e.target.value),
+                    },
+                    ensureOption(agentModelOptions, agentModel).map((m) =>
+                      h("option", { key: m, value: m }, m),
+                    ),
                   ),
-                ),
           ),
           providerUsesKey
             ? ssField(
@@ -840,16 +851,11 @@ function SettingsSheet({
           ),
           ssField(
             "Model",
-            h(
-              "select",
-              {
-                className: "ss-select",
-                value: askModel,
-                onChange: (e) =>
-                  onSaveSettings({ ask: { provider: "openrouter", model: e.target.value } }),
-              },
-              ensureOption(ASK_MODELS, askModel).map((m) => h("option", { key: m, value: m }, m)),
-            ),
+            h(ModelCombobox, {
+              provider: "openrouter",
+              value: askModel,
+              onCommit: (model) => onSaveSettings({ ask: { provider: "openrouter", model } }),
+            }),
           ),
           ssField(
             "Web search",
@@ -1132,6 +1138,122 @@ function ssField(label, control) {
 
 // Guarantee the currently-selected value is present as an option even when it
 // isn't in the catalog (e.g. a persisted OpenRouter slug we don't list).
+// Model combobox. A free-text input backed by a <datalist>, rather than a
+// <select>: OpenRouter serves ~290 usable models, which is far too many to
+// scroll, and typing to filter is what everyone expects from a model picker.
+// Free text also means any slug works the moment a provider ships it, without
+// waiting on us to update a list.
+//
+// PROPS:
+//   provider   string   - which catalog to read
+//   value      string   - the configured model id
+//   onCommit(id)        - called on blur / Enter, not per keystroke
+//   enabled    bool     - skip fetching while the sheet is closed
+//   placeholder string
+function ModelCombobox({ provider, value, onCommit, enabled = true, placeholder = "" }) {
+  const { models, source, loading } = useModelCatalog(provider, { enabled });
+  const [draft, setDraft] = React.useState(value ?? "");
+  // Warn on what's being typed, not on what's already saved: catching a dead
+  // slug before it's committed is the whole point. Because draft starts at the
+  // saved value, this still fires immediately for an already-broken config.
+  const { warning, suggestion } = useModelWarning(provider, draft, { enabled });
+  // Unique per instance. Two comboboxes on the same provider (agent and ask
+  // both use OpenRouter) would otherwise emit duplicate DOM ids, and every
+  // input would bind to whichever datalist the browser saw first.
+  const listId = React.useId ? `models-${React.useId()}` : `models-${provider}`;
+
+  // Follow external changes (provider switch, settings rebroadcast) but never
+  // stomp what someone is mid-way through typing.
+  const [focused, setFocused] = React.useState(false);
+  React.useEffect(() => {
+    if (!focused) setDraft(value ?? "");
+  }, [value, focused]);
+
+  function commit(next) {
+    const trimmed = String(next ?? "").trim();
+    if (!trimmed || trimmed === value) return;
+    onCommit?.(trimmed);
+  }
+
+  const match = models.find((m) => m.id === draft);
+  const detail = match ? describeModel(match) : "";
+
+  return h(
+    React.Fragment,
+    null,
+    h("input", {
+      className: "ss-input",
+      type: "text",
+      list: listId,
+      value: draft,
+      placeholder: placeholder || (loading ? "Loading models…" : "vendor/model"),
+      spellCheck: false,
+      autoComplete: "off",
+      onChange: (e) => {
+        setDraft(e.target.value);
+        // Picking from the datalist fires change with a complete id and no
+        // keystroke in between; commit those immediately so a click just works.
+        if (models.some((m) => m.id === e.target.value)) commit(e.target.value);
+      },
+      onFocus: () => setFocused(true),
+      onBlur: () => {
+        setFocused(false);
+        commit(draft);
+      },
+      onKeyDown: (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit(draft);
+          e.currentTarget.blur();
+        }
+      },
+    }),
+    h(
+      "datalist",
+      { id: listId },
+      ...models.slice(0, 400).map((m) =>
+        h("option", { key: m.id, value: m.id }, describeModel(m) || m.name),
+      ),
+    ),
+    detail ? h("div", { className: "ss-model-detail" }, detail) : null,
+    warning
+      ? h(
+          "div",
+          { className: "ss-model-warning" },
+          h("span", null, warning),
+          suggestion
+            ? h(
+                "button",
+                {
+                  type: "button",
+                  className: "ss-model-fix",
+                  onClick: () => {
+                    setDraft(suggestion);
+                    commit(suggestion);
+                  },
+                },
+                `Use ${suggestion}`,
+              )
+            : null,
+        )
+      : null,
+    // Provenance, but only when it is not simply "we asked the provider".
+    source === "fallback" || source === "stale-cache"
+      ? h(
+          "div",
+          { className: "ss-help" },
+          source === "fallback"
+            ? "Couldn't reach the provider's model list - showing a bundled list, which may be out of date. Any valid slug still works."
+            : "Showing the last model list we fetched; the provider is currently unreachable.",
+        )
+      : null,
+  );
+}
+
+// Providers whose model list we can fetch. Everything else keeps its static
+// dropdown (Moonshine ships three models; Ollama is free text by nature).
+const LIVE_CATALOG_PROVIDERS = new Set(["openrouter", "groq"]);
+
 function ensureOption(options, value) {
   if (!value || options.includes(value)) return options;
   return [value, ...options];
