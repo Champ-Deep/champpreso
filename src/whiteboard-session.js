@@ -62,9 +62,6 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     // gets populated; cleared when the user answers via /api/preso/answer.
     pendingQuestion: null,
     queueStats: null,
-    // v0.7.0: agent's declared current zone (SKETCHES/STRUCTURED/NOTES). The
-    // frontend renders a small floating chip on the canvas showing this.
-    activeZone: "structured",
     // v0.8.0: pinned element IDs. The agent is instructed not to modify or
     // delete these. Mutated by /api/preso/pin and /api/preso/unpin.
     pinnedIds: new Set(),
@@ -478,16 +475,6 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   };
   state.resetToolCallHistory = () => {
     state.recentToolSignatures = [];
-  };
-  // v0.7.0: agent declares its current canvas zone. Frontend shows it as a
-  // small floating chip on the canvas. Helps the user understand what region
-  // of the canvas the agent considers active for the current topic.
-  state.declareZone = (zone) => {
-    const allowed = new Set(["sketches", "structured", "notes"]);
-    const next = allowed.has(zone) ? zone : "structured";
-    state.activeZone = next;
-    broadcast(wss, { type: "agent:zone", zone: next, timestamp: new Date().toISOString() });
-    return next;
   };
   // Render a Mermaid diagram. The actual parsing + Excalidraw element creation
   // happens client-side (Mermaid runs in the browser via mermaid-to-excalidraw),

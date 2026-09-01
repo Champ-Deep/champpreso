@@ -1083,22 +1083,6 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
           return `Mermaid diagram rendering id=${id} at (${anchor.x}, ${anchor.y}). The shapes will appear on the canvas as editable Excalidraw elements within ~500ms and be included in the next turn's whiteboard state. Do not call whiteboard_apply on the same turn - let the render land first.`;
         },
       }),
-      declare_zone: tool({
-        description: "Declare which canvas zone you are currently working in. The user sees a small floating chip showing 'Working in: SKETCHES' / 'STRUCTURED' / 'NOTES'. Call this when you shift the focus of the canvas - for example, when you finish a clean diagram and start ideating again. Always declare at the start of a topic. ZONES: sketches = quick ideation, sticky-note-style rectangles, scribbles, capture mode. structured = polished diagrams (Mermaid output, patterns, formal layouts). notes = standalone text blocks for transcript-derived bullets, decisions, action items.",
-        inputSchema: z.object({
-          zone: z.enum(["sketches", "structured", "notes"]).describe("The zone you are working in this turn."),
-        }),
-        execute: async ({ zone }) => {
-          if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
-          if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
-          if (typeof state.checkToolCallLoop === "function") {
-            const sig = `${arguments[1]?.toolCallId ?? ""}|${JSON.stringify(arguments[0] ?? {}).slice(0, 200)}`;
-            if (state.checkToolCallLoop(sig)) return "LOOP_DETECTED: you have called the same tool with the same input 3 times in a row. Stop and try a different approach, or call ask_user_question.";
-          }
-          state.declareZone(zone);
-          return `Zone set to ${zone}. The user sees this on the canvas.`;
-        },
-      }),
       whiteboard_overwrite: tool({
         description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
         inputSchema: z.object({
@@ -1401,13 +1385,6 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
           anchor: z.object({ x: z.number(), y: z.number() }),
           scale: z.number().min(0.4).max(3).optional(),
           intent: z.string().min(1).max(60),
-        }),
-        execute: noop,
-      }),
-      declare_zone: tool({
-        description: "Declare which canvas zone you are currently working in: sketches, structured, or notes. Use at the start of each topic.",
-        inputSchema: z.object({
-          zone: z.enum(["sketches", "structured", "notes"]),
         }),
         execute: noop,
       }),
@@ -2000,17 +1977,6 @@ K. STICKY-NOTE CLUSTER. Loose group of small soft-fill rectangles with short tex
 L. ANNOTATED SCREENSHOT. Large central rectangle, callout text elements pointing in with thin arrows. Use when speaker references a specific thing.
 
 When you start a topic, decide which pattern fits and declare it implicitly through your layout. Stick to that pattern's coordinate logic. Switching patterns mid-topic creates visual chaos.
-
-CANVAS ZONES.
-The canvas has three implicit zones the user can see via a floating chip. Use declare_zone at the start of each topic to set the active zone:
-
-- SKETCHES zone: quick ideation, sticky-note-style rectangles with handwritten-feeling labels, scribbles, capture mode. Use for: brainstorming, raw idea capture, "let me just throw something on the board."
-
-- STRUCTURED zone: polished diagrams. Mermaid output lands here. Patterns from the visual library land here. Use for: when the user moves from "thinking" to "decided on this structure."
-
-- NOTES zone: standalone text blocks for transcript-derived bullets, decisions, action items, open questions. Use for: durable conclusions you want preserved.
-
-Declare your zone BEFORE drawing each turn. The user sees this on the canvas as a small chip and uses it to navigate.
 
 PINNED ELEMENTS.
 On every turn you receive a "PINNED IDS" list in the current canvas state message. These are elements the user has marked as authoritative. RULES:

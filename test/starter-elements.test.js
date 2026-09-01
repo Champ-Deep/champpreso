@@ -15,9 +15,9 @@ test("starter scene uses explicit text instead of a clipped bound label", () => 
   assert.equal(card.label, undefined);
   assert.ok(card.y + card.height <= 205);
   assert.equal(hint.type, "text");
-  assert.equal(hint.text, "Start listening, then\ntalk through an idea.");
+  assert.equal(hint.text, "Start whiteboarding, then\ntalk through an idea.");
   assert.equal(hint.fontFamily, 1);
-  assert.ok(hint.width >= estimateHandwrittenWidth("Start listening, then", hint.fontSize));
+  assert.ok(hint.width >= estimateHandwrittenWidth("Start whiteboarding, then", hint.fontSize));
   assert.ok(hint.width >= estimateHandwrittenWidth("talk through an idea.", hint.fontSize));
   assert.ok(hint.x > card.x);
   assert.ok(hint.x + hint.width < card.x + card.width);

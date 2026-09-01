@@ -59,14 +59,14 @@ test("browser renders the app shell", async (t) => {
   });
 
   const tab = await waitForChromeTab(url);
-  const text = await waitForRenderedText(tab.webSocketDebuggerUrl, "Start listening");
+  const text = await waitForRenderedText(tab.webSocketDebuggerUrl, "Start whiteboarding");
 
-  assert.match(text, /Start listening/);
+  assert.match(text, /Start whiteboarding/);
 
   // Page starts in the redesigned Setup screen: the setup rail renders the
   // session intent, restore/settings entry points and the primary CTA.
   const railButtons = await evaluateInTab(tab.webSocketDebuggerUrl, `Array.from(document.querySelectorAll(".setup-rail button")).map((button) => button.textContent.trim())`);
-  assert.ok(railButtons.some((label) => label.includes("Start listening")), `expected a Start listening button, got ${JSON.stringify(railButtons)}`);
+  assert.ok(railButtons.some((label) => label.includes("Start whiteboarding")), `expected a Start whiteboarding button, got ${JSON.stringify(railButtons)}`);
   assert.ok(railButtons.some((label) => label.includes("Restore last session")), `expected a Restore last session button, got ${JSON.stringify(railButtons)}`);
   assert.ok(railButtons.some((label) => label.includes("Settings")), `expected a Settings button, got ${JSON.stringify(railButtons)}`);
 

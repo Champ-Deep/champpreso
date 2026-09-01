@@ -5,7 +5,7 @@
 // This replaces the old staging-mode side panel: the session-intent textarea,
 // the multiple-speakers toggle, restore-last-session, a single scrollable
 // settings sheet (agent / transcription / mic / appearance), a canvas seed
-// affordance, the readiness glyph, and the "Start listening" button.
+// affordance, the readiness glyph, and the "Start whiteboarding" button.
 //
 // It owns only local UI state (sheet open/closed, restore feedback, seed
 // disclosure, optimistic mirrors of a few settings). Anything that must leave
@@ -479,7 +479,7 @@ export function SetupScreen({
           onClick: startListening,
           disabled: starting,
         },
-        starting ? "Starting…" : "Start listening",
+        starting ? "Starting…" : "Start whiteboarding",
       ),
 
       readinessGlyph(),
