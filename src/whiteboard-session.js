@@ -4,6 +4,7 @@ import { createSessionCostTracker } from "./session-cost.js";
 import { createTranscriptTurnQueue } from "./transcript-turn-queue.js";
 import { cleanTranscript, explainRejection } from "./transcript-hygiene.js";
 import { maxSalience } from "./salience-gate.js";
+import { promoteCandidates } from "./candidate-lifecycle.js";
 
 const FILLER_WORDS = new Set([
   "uh", "uhh", "uhhh", "um", "umm", "ummm", "ah", "ahh", "er", "erm",
@@ -67,6 +68,10 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     // v0.8.0: pinned element IDs. The agent is instructed not to modify or
     // delete these. Mutated by /api/preso/pin and /api/preso/unpin.
     pinnedIds: new Set(),
+    // Candidate registry: id -> { bornTurn, orig: { strokeStyle, opacity } }.
+    // Lives server-side (NOT element customData - the frontend sync strips
+    // customData on echo). See src/candidate-lifecycle.js.
+    candidates: new Map(),
     // v0.15.0: scoped edit. When the user drag-selects elements and types an
     // instruction, this holds { selectedIds, lineNumbers, instruction } for the
     // next turn. The agent is told to edit ONLY those elements, and a hard
@@ -329,6 +334,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.pendingGateContext = [];
     state.nextTurnSalience = null;
     state.turnSalience = null;
+    state.candidates = new Map();
   };
   state.updateLatestScreenshot = (image) => {
     state.latestScreenshot = image;
@@ -428,6 +434,14 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   state.pinElement = (id) => {
     if (!id || typeof id !== "string") return false;
     state.pinnedIds.add(id);
+    // Pinning a candidate is the strongest confirmation there is.
+    if (state.candidates instanceof Map && state.candidates.has(id)) {
+      const res = promoteCandidates({ elements: state.elements, candidates: state.candidates, ids: [id] });
+      state.elements = res.elements;
+      state.candidates = res.candidates;
+      state.canvasDirtyForAgent = true;
+      broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+    }
     broadcast(wss, { type: "pin:changed", id, pinned: true, all: Array.from(state.pinnedIds) });
     return true;
   };

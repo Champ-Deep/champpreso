@@ -29,6 +29,7 @@ import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
 import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "./whiteboard-elements.js";
 import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
 import { createSalienceClassifier } from "./salience-gate.js";
+import { detectAgentTouchedCandidates, detectUserTouchedCandidates, expireStaleCandidates, markNewCandidates, promoteCandidates } from "./candidate-lifecycle.js";
 import {
   applyWhiteboardEditOperations,
   formatLineNumberedWhiteboard,
@@ -729,7 +730,19 @@ Extract the concrete decisions this group actually made (not aspirations, not op
         // (and during it). Frontend pushes the current scene here so the next
         // transcript turn has fresh elements available to the agent.
         if (state.mode === "live") {
+          // A user edit to a candidate is a confirmation - promote it before
+          // adopting the synced scene, so the dashed style solidifies.
+          const touched = state.candidates instanceof Map
+            ? detectUserTouchedCandidates({ prevElements: state.elements, nextElements: message.elements, candidates: state.candidates })
+            : [];
           state.elements = message.elements;
+          if (touched.length > 0) {
+            const res = promoteCandidates({ elements: state.elements, candidates: state.candidates, ids: touched });
+            state.elements = res.elements;
+            state.candidates = res.candidates;
+            state.canvasDirtyForAgent = true;
+            broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
+          }
         }
       }
 
@@ -954,6 +967,11 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   const mySession = state.session ?? { active: true };
   // v0.9.0: snapshot the canvas before the turn so Undo can revert.
   if (typeof state.snapshotForUndo === "function") state.snapshotForUndo();
+  // Candidate lifecycle: remember what existed before this turn so anything
+  // new in a hypothesis turn can be marked, and agent updates to existing
+  // candidates in a decision turn can promote them.
+  const candidateBeforeElements = Array.isArray(state.elements) ? [...state.elements] : [];
+  const candidateBeforeIds = new Set(candidateBeforeElements.map((el) => el?.id).filter(Boolean));
   // v0.8.0: clear the interrupt signal from the previous turn (in case the
   // user hit interrupt mid-thought; the next turn starts clean).
   if (typeof state.clearInterruptSignal === "function") state.clearInterruptSignal();
@@ -1211,6 +1229,43 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     if (changed) {
       state.elements = reconciled;
       broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
+    }
+  }
+
+  // ---- candidate lifecycle (mechanical - never trusts the model) ----
+  if (mySession.active && state.candidates instanceof Map) {
+    let els = state.elements;
+    let cands = state.candidates;
+    let changed = false;
+    const turn = state.turnIdCounter ?? 0;
+    // A decision turn updating a candidate is the conversation confirming it.
+    if (state.turnSalience === "decision") {
+      const touched = detectAgentTouchedCandidates({ beforeElements: candidateBeforeElements, afterElements: els, candidates: cands });
+      const res = promoteCandidates({ elements: els, candidates: cands, ids: touched });
+      if (res.promotedIds.length > 0) changed = true;
+      els = res.elements;
+      cands = res.candidates;
+    }
+    // A hypothesis turn births candidates: everything new renders provisional.
+    if (state.turnSalience === "hypothesis") {
+      const res = markNewCandidates({ beforeIds: candidateBeforeIds, elements: els, candidates: cands, turn });
+      if (res.candidates.size !== cands.size) changed = true;
+      els = res.elements;
+      cands = res.candidates;
+    }
+    // Unconfirmed candidates quietly expire once the room has moved on.
+    const exp = expireStaleCandidates({ elements: els, candidates: cands, turn, pinnedIds: state.pinnedIds ?? new Set() });
+    els = exp.elements;
+    cands = exp.candidates;
+    if (exp.expiredIds.length > 0) {
+      changed = true;
+      broadcast(wss, { type: "candidate:expired", ids: exp.expiredIds, timestamp: new Date().toISOString() });
+    }
+    state.candidates = cands;
+    if (changed) {
+      state.elements = els;
+      state.canvasDirtyForAgent = true;
+      broadcast(wss, { type: "whiteboard:update", elements: els }); persistLastSession(els);
     }
   }
 
@@ -1850,10 +1905,15 @@ function formatCurrentCanvasTask(elements, latestScreenshot, state) {
   const pinnedList = state && state.pinnedIds && state.pinnedIds.size > 0
     ? `\n\nPINNED IDS (do not modify or delete): ${JSON.stringify(Array.from(state.pinnedIds))}`
     : "";
+  const salienceLine = state?.turnSalience === "hypothesis"
+    ? '\n\nSALIENCE: hypothesis - the speaker is exploring, not deciding. Draw normally; the system will automatically render the shapes you ADD this turn as dashed 50%-opacity CANDIDATES. Do not style them yourself.'
+    : state?.turnSalience === "decision"
+      ? "\n\nSALIENCE: decision - the speaker settled something. Draw committed. If an existing dashed candidate is what got confirmed, update or replace that element (same id) and the system will solidify it."
+      : "";
   const scoped = state && state.scopedEdit && state.scopedEdit.lineNumbers?.length > 0
     ? `\n\nSCOPED EDIT — the user drag-selected specific elements and wants you to edit ONLY them. Modify ONLY lines ${JSON.stringify(state.scopedEdit.lineNumbers)} (element ids ${JSON.stringify(state.scopedEdit.selectedIds)}). Treat every other element as locked: do not change, move, restyle, or delete it. You MAY add new elements if the instruction needs them. Apply this instruction: "${state.scopedEdit.instruction}".`
     : "";
-  const text = `Current line-numbered whiteboard content:\n${formatLineNumberedWhiteboard(elements)}${pinnedList}${scoped}\n\nTask:\nUse the latest speaker turn and prior context to decide whether the canvas should change.\n\nBEFORE choosing a layout, check the "Reference context for this presentation" section in your system instructions: it contains the staging area the user prepared, including any diagrams. If the speaker has just reached a topic that the staging diagrams already cover, REUSE that staging structure on the live canvas - same shapes, same labels, same arrangement, same colors - rather than inventing a different layout. The staging is the user's pre-approved visualization for those topics; only invent something new when staging doesn't cover the topic at all.\n\nIf updating, use whiteboard_apply for targeted changes (operations + viewport in ONE call). Use whiteboard_overwrite only when you need to clear, reset, or start fresh. Keep the canvas organized around the core concepts, not the transcript sequence. In the same whiteboard_apply call, also include viewport with action "scroll_to_content" AND focus_ids naming the elements the speaker is currently talking about, so the viewport centers exactly on the active talking point - never call scroll_to_content without focus_ids. Make ONE whiteboard_apply call per turn whenever possible; do not split edits and viewport into back-to-back calls. The attached screenshot (when present) shows the audience's current viewport - use it to verify your edits actually look good and that the right region is visible.`;
+  const text = `Current line-numbered whiteboard content:\n${formatLineNumberedWhiteboard(elements)}${pinnedList}${scoped}${salienceLine}\n\nTask:\nUse the latest speaker turn and prior context to decide whether the canvas should change.\n\nBEFORE choosing a layout, check the "Reference context for this presentation" section in your system instructions: it contains the staging area the user prepared, including any diagrams. If the speaker has just reached a topic that the staging diagrams already cover, REUSE that staging structure on the live canvas - same shapes, same labels, same arrangement, same colors - rather than inventing a different layout. The staging is the user's pre-approved visualization for those topics; only invent something new when staging doesn't cover the topic at all.\n\nIf updating, use whiteboard_apply for targeted changes (operations + viewport in ONE call). Use whiteboard_overwrite only when you need to clear, reset, or start fresh. Keep the canvas organized around the core concepts, not the transcript sequence. In the same whiteboard_apply call, also include viewport with action "scroll_to_content" AND focus_ids naming the elements the speaker is currently talking about, so the viewport centers exactly on the active talking point - never call scroll_to_content without focus_ids. Make ONE whiteboard_apply call per turn whenever possible; do not split edits and viewport into back-to-back calls. The attached screenshot (when present) shows the audience's current viewport - use it to verify your edits actually look good and that the right region is visible.`;
   if (typeof latestScreenshot === "string" && latestScreenshot) {
     return [
       { type: "text", text },
@@ -1965,6 +2025,9 @@ Some turns include a "SCOPED EDIT" directive in the current canvas state message
 - Treat every other element as locked: do not replace, delete, move, recolor, or restyle it. The system enforces this and will silently revert any stray change you make to an unselected element, so spending edits there is wasted.
 - You MAY insert brand-new elements if the instruction genuinely needs them (e.g. a new label on a selected box). Prefer the smallest change that satisfies the instruction.
 - Make the change in ONE whiteboard_apply call. You do not need to scroll the viewport unless the instruction implies it.
+
+CANDIDATES (provisional shapes).
+Turns arrive tagged by salience (a SALIENCE line in the canvas task message). In a "hypothesis" turn the system automatically renders the shapes you add as dashed, 50%-opacity candidates - do NOT set dashed stroke or reduced opacity yourself, and never mention candidacy in a label. When a later "decision" turn confirms an idea, update or replace that candidate element (same id) and the system solidifies it. Candidates left unconfirmed for two turns are removed automatically; only re-add one if the speaker genuinely returns to the idea.
 
 MULTI-SPEAKER SESSIONS.
 The transcript may include multiple speakers in a co-thinking session. Speaker turns are NOT explicitly labeled by the transcription engine in most cases. When you can infer from context that speakers have switched (different pronouns, different topics, "I think... vs you mentioned"), attribute ideas to the right person if a name was used. When the speaker count is ambiguous, treat it as one voice. If you successfully attribute an idea to a named speaker, optionally color-code that speaker's shapes with one consistent fill color and reuse it for their other contributions.
