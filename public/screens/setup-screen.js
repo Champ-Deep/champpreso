@@ -640,6 +640,8 @@ function SettingsSheet({
           ? "Streaming: captions appear while you speak, and the glossary biases names. ~$0.46/hr."
           : "Cloud, low latency, nails names. Costs money per minute.";
   const [deepgramKey, setDeepgramKey] = React.useState("");
+  // Three questions by default; everything else one disclosure down.
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
   function commitDeepgramKey() {
     const value = deepgramKey.trim();
     if (!value) return;
@@ -674,6 +676,73 @@ function SettingsSheet({
       h(
         "div",
         { className: "ss-body" },
+
+        // ---- THE THREE QUESTIONS ----
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-q" }, "How should it listen?"),
+          h(
+            "select",
+            {
+              className: "ss-select",
+              value: sttProvider,
+              onChange: (e) => onSaveSttProvider(e.target.value),
+              "aria-label": "How should it listen?",
+            },
+            h("option", { value: "moonshine" }, "Local · private, free, on this Mac"),
+            h("option", { value: "groq" }, "Groq LPU · fastest, free tier"),
+            h("option", { value: "deepgram" }, "Deepgram · streaming, captions as you speak"),
+            h("option", { value: "openai" }, "OpenAI · realtime, accurate"),
+          ),
+          h("div", { className: "ss-help" }, sttHelp),
+        ),
+
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-q" }, "How should it draw?"),
+          h(ModelCombobox, {
+            provider: agentProvider,
+            value: agentModel,
+            onCommit: (model) => onSaveAgentModel(model),
+          }),
+          h(
+            "div",
+            { className: "ss-help" },
+            `A fast model, because drawing happens while you are still talking. Provider: ${agentProvider} (change under Advanced).`,
+          ),
+        ),
+
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-q" }, "How should it answer?"),
+          h(ModelCombobox, {
+            provider: "openrouter",
+            value: askModel,
+            onCommit: (model) => onSaveSettings({ ask: { provider: "openrouter", model } }),
+          }),
+          h(
+            "div",
+            { className: "ss-help" },
+            `A stronger model for questions about the board. Web search ${askWebSearch ? "on" : "off"}.`,
+          ),
+        ),
+
+        h(
+          "button",
+          {
+            type: "button",
+            className: "ss-advanced-toggle",
+            onClick: () => setAdvancedOpen((v) => !v),
+            "aria-expanded": advancedOpen,
+          },
+          h("span", null, "Advanced"),
+          h("span", { className: "ss-advanced-count" }, advancedOpen ? "hide ‹" : "more settings ›"),
+        ),
+
+        ...(advancedOpen ? [
 
         // ---- SESSION ----
         // Migrated from the old setup rail: the one-line question on the card
@@ -985,6 +1054,8 @@ function SettingsSheet({
             "Live captions on by default",
           ),
         ),
+
+        ] : []),
       ),
 
       readiness,
