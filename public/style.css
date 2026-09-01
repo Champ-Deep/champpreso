@@ -2305,6 +2305,28 @@ button:disabled {
   pointer-events: none;
 }
 
+/* Prune-branch segment inside the contextual selection bar. */
+.se-prune-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--champ-mist);
+  white-space: nowrap;
+}
+.se-prune {
+  height: 28px;
+  padding: 0 12px;
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.42);
+  border-radius: 7px;
+  color: #fca5a5;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.se-prune:hover {
+  background: rgba(239, 68, 68, 0.28);
+}
+
 /* Caption narration variants - the caption is the single narration surface. */
 .ls-caption-heard {
   color: var(--champ-mist);

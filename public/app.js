@@ -23,6 +23,8 @@ import {
   sendTypedTurn as apiSendTypedTurn,
   askAgent as apiAskAgent,
   resetSession as apiResetSession,
+  sendPrunePreview as apiPrunePreview,
+  sendPrune as apiPrune,
 } from "./api-client.js";
 import { createWsClient } from "./ws-client.js";
 import { startMicCapture } from "./mic-capture.js";
@@ -147,6 +149,9 @@ function App() {
   // "Edit selected" bar can appear, and hold the typed instruction.
   const [selectedCount, setSelectedCount] = React.useState(0);
   const selectedIdsRef = React.useRef([]);
+  // Prune branch: with exactly one element selected in live mode, preview
+  // what pruning it would take (downstream shapes + arrows). null = no bar.
+  const [prunePreview, setPrunePreview] = React.useState(null);
   const [scopedEditText, setScopedEditText] = React.useState("");
   const [scopedEditSending, setScopedEditSending] = React.useState(false);
   // v0.15.0: typed turn ("type a point to add to the board").
@@ -253,6 +258,41 @@ function App() {
   }, [transcriptHistory]);
   // v0.12.0: agent thinking status text. Updated from agent tool start/end
   // events so the user can see what the agent is doing in real-time.
+  // Contextual prune preview: single selection in live mode -> ask the server
+  // what the branch under it holds. Debounced so drag-selection doesn't spam.
+  React.useEffect(() => {
+    if (phase !== "listening" && phase !== "paused") {
+      setPrunePreview(null);
+      return;
+    }
+    if (selectedCount !== 1) {
+      setPrunePreview(null);
+      return;
+    }
+    const elementId = selectedIdsRef.current[0];
+    if (!elementId) return;
+    const timer = setTimeout(() => {
+      apiPrunePreview(elementId)
+        .then((preview) => {
+          if (selectedIdsRef.current[0] === elementId) setPrunePreview(preview);
+        })
+        .catch(() => setPrunePreview(null));
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCount, phase]);
+
+  async function pruneSelectedBranch() {
+    const preview = prunePreview;
+    if (!preview?.elementId) return;
+    setPrunePreview(null);
+    try {
+      await apiPrune(preview.elementId);
+    } catch (err) {
+      showToast(`Prune failed: ${err.message}`, { variant: "warn" });
+    }
+  }
+
   // Retry for a failed turn: resend what was heard as a typed turn (bypasses
   // the salience gate - retrying is the user's explicit decision).
   const retryTurn = React.useCallback((text) => {
@@ -995,6 +1035,13 @@ function App() {
           narrationNonceRef.current += 1;
           setNarration({ phase: "noted", text: message.text, nonce: narrationNonceRef.current });
         }
+        if (message.type === "branch:pruned") {
+          const n = message.shapes ?? (Array.isArray(message.ids) ? message.ids.length : 0);
+          showToast(`Pruned ${n} shape${n === 1 ? "" : "s"} + ${message.arrows ?? 0} arrow${(message.arrows ?? 0) === 1 ? "" : "s"} — Undo is available`, { variant: "info" });
+          setUndoAvailable(true);
+          clearTimeout(undoWindowTimerRef.current);
+          undoWindowTimerRef.current = setTimeout(() => setUndoAvailable(false), 12000);
+        }
         if (message.type === "candidate:expired") {
           const n = Array.isArray(message.ids) ? message.ids.length : 0;
           if (n > 0) showToast(`Let go of ${n} unconfirmed sketch${n === 1 ? "" : "es"}`, { variant: "info" });
@@ -1503,6 +1550,29 @@ function App() {
               { className: "se-count" },
               `✏️ ${selectedCount} selected`,
             ),
+            // Prune branch: single selection only; the server previewed what
+            // the branch under this element holds.
+            selectedCount === 1 && prunePreview && prunePreview.ok
+              ? React.createElement(
+                  React.Fragment,
+                  null,
+                  React.createElement(
+                    "span",
+                    { className: "se-prune-count" },
+                    `${prunePreview.shapes} shape${prunePreview.shapes === 1 ? "" : "s"} + ${prunePreview.arrows} arrow${prunePreview.arrows === 1 ? "" : "s"}`,
+                  ),
+                  React.createElement(
+                    "button",
+                    {
+                      className: "se-prune",
+                      type: "button",
+                      title: "Remove this element and everything downstream of it",
+                      onClick: pruneSelectedBranch,
+                    },
+                    "Prune branch",
+                  ),
+                )
+              : null,
             React.createElement("input", {
               className: "se-input",
               type: "text",

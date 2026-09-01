@@ -228,6 +228,92 @@ export function readBoardStructure(elements) {
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Prune branch: everything downstream of one node, in one atomic set.
+// Walks the arrow graph (bindings + snap fallback, same resolution the
+// structural read uses) plus containment, to a fixpoint. Pinned nodes are
+// spared and the walk never passes through them; arrows left dangling by a
+// removal are collected too, as are bound labels of anything removed.
+// ---------------------------------------------------------------------------
+export function computeDownstreamSubtree(elements, rootId, { pinnedIds = new Set() } = {}) {
+  const empty = { nodeIds: new Set(), arrowIds: new Set(), labelIds: new Set(), allIds: new Set(), shapes: 0, arrows: 0 };
+  const live = liveElements(elements);
+  const byId = new Map(live.map((el) => [el.id, el]));
+  if (!rootId || !byId.has(rootId)) return empty;
+
+  // Bound labels (text living inside a shape) are presentation, not nodes.
+  const boundLabelIds = new Set();
+  for (const el of live) {
+    if (el.type === "text" && el.containerId && byId.has(el.containerId)) boundLabelIds.add(el.id);
+    for (const bound of el.boundElements ?? []) {
+      if (bound?.type === "text" && byId.has(bound.id)) boundLabelIds.add(bound.id);
+    }
+  }
+  const entryById = new Map(
+    live.map((el) => [el.id, { element: el, role: boundLabelIds.has(el.id) ? "bound-label" : "item" }]),
+  );
+
+  const edges = [];
+  for (const el of live) {
+    if (!LINEAR_TYPES.has(el.type)) continue;
+    edges.push({
+      id: el.id,
+      from: resolveEndpoint(el, "start", entryById, live),
+      to: resolveEndpoint(el, "end", entryById, live),
+    });
+  }
+
+  const area = (el) => Math.abs(width(el) * height(el));
+  const nodeIds = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    // Follow arrows in their drawn direction only.
+    for (const edge of edges) {
+      if (!edge.from || !edge.to) continue;
+      if (!nodeIds.has(edge.from) || nodeIds.has(edge.to)) continue;
+      if (pinnedIds.has(edge.to) || boundLabelIds.has(edge.to)) continue;
+      nodeIds.add(edge.to);
+      grew = true;
+    }
+    // Pruning a container prunes its contents.
+    for (const el of live) {
+      if (LINEAR_TYPES.has(el.type) || boundLabelIds.has(el.id)) continue;
+      if (nodeIds.has(el.id) || pinnedIds.has(el.id)) continue;
+      const center = centerOf(el);
+      for (const id of nodeIds) {
+        const container = byId.get(id);
+        if (!container || !CONTAINER_TYPES.has(container.type) || container.id === el.id) continue;
+        if (area(el) >= area(container)) continue;
+        if (!containsPoint(container, center)) continue;
+        nodeIds.add(el.id);
+        grew = true;
+        break;
+      }
+    }
+  }
+
+  // Any arrow touching a removed node dangles and goes too.
+  const arrowIds = new Set(
+    edges.filter((e) => (e.from && nodeIds.has(e.from)) || (e.to && nodeIds.has(e.to))).map((e) => e.id),
+  );
+
+  const labelIds = new Set();
+  for (const el of live) {
+    if (!boundLabelIds.has(el.id)) continue;
+    if (el.containerId && (nodeIds.has(el.containerId) || arrowIds.has(el.containerId))) labelIds.add(el.id);
+  }
+  for (const id of [...nodeIds, ...arrowIds]) {
+    for (const bound of byId.get(id)?.boundElements ?? []) {
+      if (bound?.type === "text" && byId.has(bound.id)) labelIds.add(bound.id);
+    }
+  }
+
+  const allIds = new Set([...nodeIds, ...arrowIds, ...labelIds]);
+  return { nodeIds, arrowIds, labelIds, allIds, shapes: nodeIds.size, arrows: arrowIds.size };
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

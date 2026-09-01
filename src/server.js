@@ -22,7 +22,7 @@ import { createMcpToolset } from "./mcp-client.js";
 import { createModelCatalog } from "./model-catalog.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
-import { describeWhiteboard } from "./whiteboard-semantics.js";
+import { describeWhiteboard, computeDownstreamSubtree } from "./whiteboard-semantics.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
@@ -501,6 +501,52 @@ export async function startServer(options) {
       return res.status(500).json({ error: `Seeding turn failed: ${error.message}` });
     }
     res.json({ ok: true, elementCount: state.elements.length });
+  });
+
+  // ===== PRUNE BRANCH =====
+  // Kill a thread and everything downstream of it in one atomic action.
+  // Preview is side-effect free; prune snapshots first so Undo can revert it
+  // exactly like an agent turn.
+  function resolvePruneTarget(req, res) {
+    if (state.mode !== "live") {
+      res.status(409).json({ error: "Prune is only available while whiteboarding." });
+      return null;
+    }
+    const elementId = String(req.body?.elementId ?? "").trim();
+    if (!elementId || !state.elements.some((el) => el?.id === elementId)) {
+      res.status(400).json({ error: "elementId must name an element on the current canvas." });
+      return null;
+    }
+    return elementId;
+  }
+
+  app.post("/api/session/prune-preview", express.json(), (req, res) => {
+    const elementId = resolvePruneTarget(req, res);
+    if (!elementId) return;
+    const sub = computeDownstreamSubtree(state.elements, elementId, { pinnedIds: state.pinnedIds ?? new Set() });
+    res.json({ ok: true, elementId, ids: [...sub.allIds], shapes: sub.shapes, arrows: sub.arrows });
+  });
+
+  app.post("/api/session/prune", express.json(), (req, res) => {
+    const elementId = resolvePruneTarget(req, res);
+    if (!elementId) return;
+    const sub = computeDownstreamSubtree(state.elements, elementId, { pinnedIds: state.pinnedIds ?? new Set() });
+    if (typeof state.snapshotForUndo === "function") state.snapshotForUndo();
+    state.elements = state.elements.filter((el) => !sub.allIds.has(el?.id));
+    for (const id of sub.allIds) {
+      state.candidates?.delete?.(id);
+      state.pinnedIds?.delete?.(id);
+    }
+    state.canvasDirtyForAgent = true;
+    broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
+    broadcast(wss, {
+      type: "branch:pruned",
+      ids: [...sub.allIds],
+      shapes: sub.shapes,
+      arrows: sub.arrows,
+      timestamp: new Date().toISOString(),
+    });
+    res.json({ ok: true, removed: sub.allIds.size, shapes: sub.shapes, arrows: sub.arrows });
   });
 
   app.post("/api/session/review", express.json(), async (req, res) => {
