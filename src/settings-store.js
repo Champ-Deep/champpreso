@@ -18,6 +18,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   },
   transcription: {
     provider: "moonshine",
+    // User glossary: names and product terms (comma- or newline-separated)
+    // fed to every STT provider's vocabulary biasing. Config, not session
+    // content - it survives resets, unlike staging-derived keywords.
+    glossary: "",
     moonshine: { model: "medium" },
     openai: { model: "gpt-realtime-whisper" },
     // v0.11.0: Groq Whisper Large v3 Turbo. OpenAI-compatible /audio/transcriptions
@@ -87,32 +91,18 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // Champ Suite Ember by default. Switch to #F26722 (Champions Group parent)
     // or any of the world hues in the dropdown.
     themePrimary: "#FF6B35",
-    // Backlog Pill placement relative to Pause Capture button.
-    backlogPosition: "below", // "above" | "below"
-    // Status Card density in PRESO. "expand" keeps all three rows; "collapse"
-    // shrinks to a single line, click-to-expand.
-    statusDensity: "expand", // "expand" | "collapse"
-    // Live captions on/off and visual variant.
+    // Live captions on/off.
     captionsOn: true,
-    captionMode: "presentation", // "presentation" | "working"
-    // Floating Question Card anchor edge.
-    questionPos: "top", // "top" | "bottom"
     // Canvas palette swatch row on/off. The active palette itself is just
     // themePrimary (above) - one accent color field, not a separate one.
     paletteRow: true,
-    // Mode toggle breathing underline micro-interaction.
-    toggleBreathe: true,
     // First-launch onboarding ribbon. User dismisses; persists as false.
     onboarding: true,
     // Dark panel vs light panel. Aegis defaults to dark.
     panelTheme: "dark", // "dark" | "light"
-    // Provider fallback chain. When the primary provider errors or times out,
-    // the server tries the next in this list. Empty entries are skipped.
-    providerFallback: ["groq", "openrouter", "openai", "ollama"],
-    // Agent timeout per turn (ms). Lower than v0.6's 90s to fail fast.
+    // Agent timeout per turn (ms). Honoured by runWhiteboardAgent; the old
+    // 30s value shipped unwired while the code hardcoded 90s.
     agentTimeoutMs: 30000,
-    // Number of retries on a timed-out or failed turn before giving up.
-    agentMaxRetries: 1,
   },
 });
 

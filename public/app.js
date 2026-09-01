@@ -211,13 +211,8 @@ function App() {
   // the server.
   const [uiPrefs, setUiPrefs] = React.useState({
     themePrimary: "#FF6B35",
-    backlogPosition: "below",
-    statusDensity: "expand",
     captionsOn: true,
-    captionMode: "presentation",
-    questionPos: "top",
     paletteRow: true,
-    toggleBreathe: true,
     onboarding: true,
     panelTheme: "dark",
   });

@@ -41,3 +41,17 @@ export function buildTranscriptionVocabularyPrompt(keywords, { maxChars = DEFAUL
   if (!body) return "";
   return `${PROMPT_PREFIX}${body}${PROMPT_SUFFIX}`;
 }
+
+// User glossary: "LakeB2B, SPAN\nCirralogix" -> ["LakeB2B", "SPAN", "Cirralogix"].
+// Order-preserving, trimmed, de-duplicated case-insensitively.
+export function parseGlossaryTerms(glossary) {
+  if (typeof glossary !== "string" || !glossary.trim()) return [];
+  const seen = new Map();
+  for (const raw of glossary.split(/[,\n]/)) {
+    const term = raw.trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (!seen.has(key)) seen.set(key, term);
+  }
+  return [...seen.values()];
+}

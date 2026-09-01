@@ -27,7 +27,7 @@ import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
 import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "./whiteboard-elements.js";
-import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
+import { extractWhiteboardKeywords, parseGlossaryTerms } from "./whiteboard-keywords.js";
 import { createSalienceClassifier } from "./salience-gate.js";
 import { detectAgentTouchedCandidates, detectUserTouchedCandidates, expireStaleCandidates, markNewCandidates, promoteCandidates } from "./candidate-lifecycle.js";
 import {
@@ -233,10 +233,22 @@ export async function startServer(options) {
     res.json(await modelCatalog.verify(provider, model, { apiKey: await apiKeyFor(provider) }));
   });
 
-  app.post("/api/session/reset", (_req, res) => {
+  // The glossary is config, not session content: every vocabulary push
+  // starts from it, and clearing a session falls back TO it, not to [].
+  async function glossaryTerms() {
+    if (!options.settingsStore) return [];
+    const settings = await options.settingsStore.load();
+    return parseGlossaryTerms(settings?.transcription?.glossary);
+  }
+  function mergeKeywords(glossary, staging) {
+    const seen = new Set(glossary.map((t) => t.toLowerCase()));
+    return [...glossary, ...staging.filter((t) => !seen.has(t.toLowerCase()))];
+  }
+
+  app.post("/api/session/reset", async (_req, res) => {
     state.reset();
     askHistory.length = 0;
-    transcription.setSessionContext({ keywords: [] });
+    transcription.setSessionContext({ keywords: await glossaryTerms() });
     broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     broadcastCost(wss, state);
     res.json({ ok: true });
@@ -267,8 +279,8 @@ export async function startServer(options) {
       stagingScreenshot,
       notesAndTranscripts,
     });
-    const keywords = extractWhiteboardKeywords(stagingElements);
-    console.log(`[champpreso] preso/start: ${keywords.length} staging keyword(s) for transcription bias` +
+    const keywords = mergeKeywords(await glossaryTerms(), extractWhiteboardKeywords(stagingElements));
+    console.log(`[champpreso] preso/start: ${keywords.length} keyword(s) for transcription bias (glossary + staging)` +
       (notesAndTranscripts ? `, ${notesAndTranscripts.length} chars of notes/transcripts` : ""));
     transcription.setSessionContext({ keywords });
     askHistory.length = 0;
@@ -309,10 +321,10 @@ export async function startServer(options) {
     res.json({ ok: true });
   });
 
-  app.post("/api/session/back-to-staging", (_req, res) => {
+  app.post("/api/session/back-to-staging", async (_req, res) => {
     state.backToStaging();
     askHistory.length = 0;
-    transcription.setSessionContext({ keywords: [] });
+    transcription.setSessionContext({ keywords: await glossaryTerms() });
     broadcast(wss, { type: "mode", mode: state.mode, lifecycleMode: toWireMode(state.mode) });
     res.json({ ok: true });
   });
@@ -1065,9 +1077,10 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
 
   const baseSystem = whiteboardSystemPrompt();
 
+  const settingsForTurn = options.settingsStore ? await options.settingsStore.load() : null;
   const agentProvider = options.agentProvider
-    ?? (options.settingsStore
-      ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
+    ?? (settingsForTurn
+      ? resolveAgentProviderFromSettings({ settings: settingsForTurn, env: options.env ?? process.env })
       : defaultWhiteboardAgentProvider(options));
   // Fold the primer text into the system prompt for both openai and codex
   // providers. The primer image (if any) stays in messages[0] - system prompts
@@ -1233,7 +1246,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
 
   const result = await withTimeout(
     runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn }),
-    options.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+    options.agentTimeoutMs ?? settingsForTurn?.ui?.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
     "Whiteboard agent timed out",
   );
   logAgentUsage("turn", result, {
