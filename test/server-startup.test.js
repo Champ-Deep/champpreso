@@ -315,8 +315,12 @@ test("runWhiteboardAgent exposes whiteboard_apply that combines edits and viewpo
     { type: "text", id: "title", x: 72, y: 68, text: "AutoPreso" },
     { type: "rectangle", id: "voice", x: 80, y: 140, width: 220, height: 80 },
   ]);
+  // Drawing is narrated (agent:intent) before the canvas messages land.
+  const narration = broadcasts.filter((b) => b.type === "agent:intent");
+  assert.equal(narration.length, 1);
+  assert.equal(narration[0].phase, "drawing");
   assert.deepEqual(
-    broadcasts,
+    broadcasts.filter((b) => b.type !== "agent:intent"),
     [
       { type: "whiteboard:update", elements: state.elements },
       { type: "whiteboard:viewport", action: "scroll_to_content", focus_ids: ["voice"] },

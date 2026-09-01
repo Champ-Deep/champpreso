@@ -161,15 +161,41 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
       state.turnIdCounter = (state.turnIdCounter || 0) + 1;
       const turnId = `turn-${state.turnIdCounter}-${Date.now()}`;
       broadcast(wss, { type: "agent:turn-start", turnId, transcript, timestamp: new Date().toISOString() });
+      // Narration: the turn is now visibly "thinking" about what was heard.
+      state.turnDrewSomething = false;
+      broadcast(wss, {
+        type: "agent:intent",
+        phase: "thinking",
+        heard: transcript.slice(0, 160),
+        timestamp: new Date().toISOString(),
+      });
       options.onAgentEvent?.({ type: "turn:start", transcript, timestamp: new Date().toISOString() });
       try {
         await runAgent({ transcript, state, wss, options });
         broadcast(wss, { type: "agent:turn-end", turnId, transcript, timestamp: new Date().toISOString() });
+        // Narration: a turn that drew nothing must still report - an invisible
+        // no-op is half of "I can't tell if it's working".
+        broadcast(wss, {
+          type: "agent:intent",
+          phase: "idle",
+          noop: !state.turnDrewSomething,
+          timestamp: new Date().toISOString(),
+        });
         options.onAgentEvent?.({ type: "turn:end", transcript, timestamp: new Date().toISOString() });
       } catch (error) {
         console.error("Whiteboard agent failed:", error);
         broadcast(wss, { type: "error", message: `Whiteboard agent failed: ${error.message}` });
         broadcast(wss, { type: "agent:turn-error", turnId, transcript, error: error.message, timestamp: new Date().toISOString() });
+        // Narration: say what broke in plain words and carry what was heard so
+        // the frontend can offer Try Again without losing the utterance.
+        broadcast(wss, {
+          type: "agent:intent",
+          phase: "error",
+          error: error.message,
+          retryable: true,
+          heard: transcript.slice(0, 500),
+          timestamp: new Date().toISOString(),
+        });
         options.onAgentEvent?.({ type: "turn:error", transcript, error: error.message, timestamp: new Date().toISOString() });
       } finally {
         state.agentBusy = false;

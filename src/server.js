@@ -1049,14 +1049,17 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             y: z.number().describe("Canvas y coordinate for the top-left of the rendered diagram."),
           }).describe("Where on the canvas to place the rendered diagram."),
           scale: z.number().min(0.4).max(3).optional().describe("Optional scale factor. 1.0 default."),
+          intent: z.string().min(1).max(60).describe("Plain words for the person watching: what you are doing right now (e.g. \"effort vs impact 2x2\", \"capturing the Friday decision\"). Shown live on screen."),
         }),
-        execute: async ({ syntax, anchor, scale }) => {
+        execute: async ({ syntax, anchor, scale, intent }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
           if (typeof state.checkToolCallLoop === "function") {
             const sig = `${arguments[1]?.toolCallId ?? ""}|${JSON.stringify(arguments[0] ?? {}).slice(0, 200)}`;
             if (state.checkToolCallLoop(sig)) return "LOOP_DETECTED: you have called the same tool with the same input 3 times in a row. Stop and try a different approach, or call ask_user_question.";
           }
+          broadcastAgentIntent(wss, { phase: "drawing", intent });
+          state.turnDrewSomething = true;
           const id = state.renderMermaid({ syntax, anchor, scale });
           options.onAgentEvent?.({ type: "tool:end", tool: "render_mermaid", result: { id, anchor, syntax }, timestamp: new Date().toISOString() });
           return `Mermaid diagram rendering id=${id} at (${anchor.x}, ${anchor.y}). The shapes will appear on the canvas as editable Excalidraw elements within ~500ms and be included in the next turn's whiteboard state. Do not call whiteboard_apply on the same turn - let the render land first.`;
@@ -1082,14 +1085,17 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
         description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
         inputSchema: z.object({
           elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
+          intent: z.string().min(1).max(60).describe("Plain words for the person watching: what you are doing right now (e.g. \"effort vs impact 2x2\", \"capturing the Friday decision\"). Shown live on screen."),
         }),
-        execute: async ({ elements }) => {
+        execute: async ({ elements, intent }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
           if (typeof state.checkToolCallLoop === "function") {
             const sig = `${arguments[1]?.toolCallId ?? ""}|${JSON.stringify(arguments[0] ?? {}).slice(0, 200)}`;
             if (state.checkToolCallLoop(sig)) return "LOOP_DETECTED: you have called the same tool with the same input 3 times in a row. Stop and try a different approach, or call ask_user_question.";
           }
+          broadcastAgentIntent(wss, { phase: "drawing", intent });
+          state.turnDrewSomething = true;
           options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_overwrite", input: { elements }, timestamp: new Date().toISOString() });
           const normalizedElements = normalizeWhiteboardElements(elements);
           state.elements = normalizedElements;
@@ -1110,8 +1116,9 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
             focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
           }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
+          intent: z.string().min(1).max(60).describe("Plain words for the person watching: what you are doing right now (e.g. \"effort vs impact 2x2\", \"capturing the Friday decision\"). Shown live on screen."),
         }),
-        execute: async ({ operations, viewport }) => {
+        execute: async ({ operations, viewport, intent }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
           if (typeof state.checkToolCallLoop === "function") {
@@ -1125,6 +1132,8 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             dumpToolCall("whiteboard_apply", { operations, viewport }, state.elements.map((el) => el.id), msg);
             return msg;
           }
+          broadcastAgentIntent(wss, { phase: "drawing", intent });
+          state.turnDrewSomething = true;
           options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_apply", input: { operations, viewport }, timestamp: new Date().toISOString() });
 
           let canvasResult = "";
@@ -1211,6 +1220,12 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     });
   }
   return result;
+}
+
+// One narration surface: agent:intent messages compose the "what is it doing"
+// story (thinking -> drawing -> idle/noop or error) for the caption.
+export function broadcastAgentIntent(wss, fields) {
+  broadcast(wss, { type: "agent:intent", timestamp: new Date().toISOString(), ...fields });
 }
 
 // Returned to the model when a tool is called after the user has ended the
@@ -1330,6 +1345,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
           syntax: z.string().min(8).max(8000),
           anchor: z.object({ x: z.number(), y: z.number() }),
           scale: z.number().min(0.4).max(3).optional(),
+          intent: z.string().min(1).max(60),
         }),
         execute: noop,
       }),
@@ -1344,6 +1360,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
         description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
         inputSchema: z.object({
           elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
+          intent: z.string().min(1).max(60),
         }),
         execute: noop,
       }),
@@ -1356,6 +1373,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
             zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
             focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
           }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
+          intent: z.string().min(1).max(60),
         }),
         execute: noop,
       }),
@@ -2010,6 +2028,7 @@ Use the reference context's vocabulary verbatim where you can - the user has alr
 Never dump the entire reference context onto the canvas at the start. Surface relevant pieces only when the speaker brings them up; the canvas should still grow with the talk.
 
 When updating the canvas:
+- Every drawing tool call requires "intent": <=60 characters of plain words naming what you are doing, written for the person watching, not for logs (e.g. "effort vs impact 2x2", "capturing the Friday decision"). It is shown live on screen next to what was heard.
 - Use whiteboard_apply for normal incremental changes.
 - Use whiteboard_overwrite only when you need to clear, reset, or start fresh.
 - whiteboard_apply takes optional operations (edit ops) and an optional viewport command, and runs them together: edits land first, then the viewport moves.
