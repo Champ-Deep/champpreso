@@ -966,7 +966,11 @@ function App() {
         if (message.type === "whiteboard:viewport")
           applyWhiteboardViewportCommand(message);
         if (message.type === "error") {
-          setError(message.message);
+          // Agent-turn failures are narrated by the caption error pill
+          // (agent:intent phase error, with Try Again) - a second red toast
+          // for the same failure is noise. Other errors still toast.
+          const isAgentTurnFailure = /whiteboard agent failed/i.test(message.message);
+          if (!isAgentTurnFailure) setError(message.message);
           if (/agent/i.test(message.message)) setAgentError(true);
           else setSttError(true);
         }

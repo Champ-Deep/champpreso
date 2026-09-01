@@ -518,10 +518,11 @@ export function ListeningScreen({
 
     // ============ CAPTION PILL - the single narration surface ============
     // error > drawing/thinking/noted/no-op > plain transcript caption.
+    // (capClass lifts the pill clear of the typed-turn row when that's open.)
     narView && narView.phase === "error"
       ? h(
           "div",
-          { className: "ls-caption ls-caption--error" },
+          { className: `ls-caption ls-caption--error${typedOpen ? " ls-caption--lifted" : ""}` },
           h("span", null, `Couldn't draw that — ${String(narView.error || "something went wrong").slice(0, 120)}. Nothing was lost.`),
           narView.retryable && narView.heard
             ? h(
@@ -541,7 +542,7 @@ export function ListeningScreen({
       : narView && narView.phase === "drawing"
         ? h(
             "div",
-            { className: "ls-caption" },
+            { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` },
             narView.heard ? h("span", { className: "ls-caption-heard" }, `“${narView.heard.slice(0, 60)}”`) : null,
             h("span", { className: "ls-caption-arrow" }, "→"),
             h("span", null, narView.intent || "drawing"),
@@ -549,7 +550,7 @@ export function ListeningScreen({
         : narView && narView.phase === "thinking"
           ? h(
               "div",
-              { className: "ls-caption" },
+              { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` },
               narView.heard ? h("span", { className: "ls-caption-heard" }, `“${narView.heard.slice(0, 60)}”`) : null,
               h("span", { className: "ls-caption-arrow" }, "→"),
               h("span", { className: "ls-caption-heard" }, "thinking…"),
@@ -557,18 +558,18 @@ export function ListeningScreen({
           : narView && narView.phase === "noted"
             ? h(
                 "div",
-                { className: "ls-caption" },
+                { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` },
                 h("span", { className: "ls-caption-heard" }, `“${String(narView.text || "").slice(0, 70)}”`),
                 h("span", { className: "ls-caption-tag" }, "noted"),
               )
             : narView && narView.phase === "idle" && narView.noop
               ? h(
                   "div",
-                  { className: "ls-caption ls-caption--noop" },
+                  { className: `ls-caption ls-caption--noop${typedOpen ? " ls-caption--lifted" : ""}` },
                   "Listening — nothing worth drawing yet",
                 )
               : captionShown
-                ? h("div", { className: "ls-caption" }, visibleCaption)
+                ? h("div", { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` }, visibleCaption)
                 : null,
 
     // ============ STEER BAR ============

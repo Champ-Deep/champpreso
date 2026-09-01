@@ -1,4 +1,158 @@
+/*
+ * ChampPreso. A Champions Group project.
+ * Aegis design language for the Champ Suite.
+ * Champ Ember primary, dark panel, light Excalidraw canvas.
+ * Forked from autopreso by Kun Chen (MIT).
+ *
+ * Google Fonts (Space Grotesk, Inter, JetBrains Mono, Fraunces, Caveat)
+ * are loaded via <link> tags in public/index.html, not @import here.
+ */
 
+:root {
+  /* Champions Group parent brand (kept for back-compat with existing classes) */
+  --cg-orange: #F26722;
+  --cg-deep-orange: #D94F0A;
+  --cg-bright-orange: #FF8544;
+  --cg-soft-peach: #FFF4EC;
+  --cg-warm-tint: #FFE8D6;
+  --cg-ink: #1A1A1A;
+  --cg-ink-soft: #2E2E2E;
+  --cg-white: #FFFFFF;
+  --cg-warm-gray: #6B6B6B;
+  --cg-border: #E5E7EB;
+  --cg-light-gray: #F5F5F5;
+  --cg-off-white: #FAFAFA;
+  --cg-gradient-hero: linear-gradient(135deg, #F26722 0%, #D94F0A 100%);
+
+  /* === AEGIS NEUTRALS (Champ Suite design language) === */
+  --champ-ink:    #0B0D12;
+  --champ-carbon: #14171F;
+  --champ-slate:  #1E222D;
+  --champ-steel:  #2A2F3D;
+  --champ-mist:   #6B7280;
+  --champ-cloud:  #D1D5DB;
+  --champ-paper:  #F4F4F0;
+  --champ-snow:   #FAFAF7;
+
+  /* === Champ Ember (default primary; overridden per-session via --p) === */
+  --champ-ember:      #FF6B35;
+  --champ-ember-glow: #FF8C5A;
+  --champ-ember-deep: #C2410C;
+  --champ-ember-char: #7C2D12;
+
+  /* Signal colors */
+  --champ-verdant: #10B981;
+  --champ-amber:   #F59E0B;
+  --champ-crimson: #EF4444;
+  --champ-azure:   #3B82F6;
+
+  /* Per-world tokens (App overrides --p, --s, --g, --t inline based on user pref) */
+  --p: var(--champ-ember);
+  --s: var(--champ-ember-deep);
+  --g: var(--champ-ember-glow);
+  --t: var(--champ-ember-char);
+
+  /* Type */
+  --font-display: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-body:    "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-accent:  "Fraunces", Georgia, serif;
+  --font-hand:    "Caveat", "Comic Sans MS", cursive;
+
+  /* Type scale (modular ratio 1.250) */
+  --fs-caption:  0.75rem;   /* 12 */
+  --fs-sm:       0.875rem;  /* 14 */
+  --fs-base:     1rem;      /* 16 */
+  --fs-lg:       1.125rem;  /* 18 */
+  --fs-h6:       1.25rem;   /* 20 */
+  --fs-h5:       1.5rem;    /* 24 */
+  --fs-h4:       1.875rem;  /* 30 */
+  --fs-h3:       2.25rem;   /* 36 */
+  --fs-h2:       3rem;      /* 48 */
+  --fs-h1:       3.75rem;   /* 60 */
+  --fs-display:  5rem;      /* 80 */
+
+  /* Line heights */
+  --lh-tight:    1.15;
+  --lh-snug:     1.35;
+  --lh-normal:   1.5;
+  --lh-relaxed:  1.6;
+  --lh-loose:    1.8;
+
+  /* Letter spacing */
+  --ls-tight:    -0.04em;
+  --ls-snug:     -0.02em;
+  --ls-normal:   0;
+  --ls-wide:     0.05em;
+  --ls-wider:    0.1em;
+  --ls-widest:   0.15em;
+
+  /* Spacing (8-point with 4-point half step) */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  24px;
+  --s-6:  32px;
+  --s-7:  48px;
+  --s-8:  64px;
+  --s-9:  96px;
+  --s-10: 128px;
+
+  /* Borders + shadows */
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong:  rgba(255, 255, 255, 0.20);
+  --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md:   0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 32px;
+
+  /* Radii */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-2xl:  24px;
+  --r-full: 9999px;
+
+  /* Motion */
+  --t-micro: 120ms;
+  --t-std: 220ms;
+  --t-deliberate: 380ms;
+  --t-hero:       600ms;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in:      cubic-bezier(0.4, 0, 1, 1);
+  --ease-out:     cubic-bezier(0, 0, 0.2, 1);
+
+  /* === Semantic role tokens (use these in components; dark-mode defaults) === */
+  --bg:          var(--champ-ink);
+  --bg-elevated: var(--champ-carbon);
+  --bg-card:     var(--champ-slate);
+  --bg-inset:    var(--champ-steel);
+
+  --surface-0: var(--champ-ink);
+  --surface-1: var(--champ-carbon);
+  --surface-2: var(--champ-slate);
+  --surface-3: var(--champ-steel);
+
+  --fg:          var(--champ-snow);
+  --fg-1:        var(--champ-snow);
+  --fg-2:        var(--champ-cloud);
+  --fg-3:        var(--champ-mist);
+  --text-primary:   var(--champ-snow);
+  --text-secondary: var(--champ-cloud);
+  --text-tertiary:  var(--champ-mist);
+
+  --accent:        var(--champ-ember);
+  --accent-glow:   var(--champ-ember-glow);
+  --accent-deep:   var(--champ-ember-deep);
+
+  --focus-ring:        0 0 0 3px rgba(255, 107, 53, 0.4);
+  --focus-ring-offset: 2px;
+}
 
 /* =========================================================
    LIGHT THEME OVERRIDE
@@ -45,6 +199,11 @@
    ========================================================= */
 @keyframes ppPulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:.5}100%{transform:scale(1);opacity:1}}
 @keyframes ppFadeUp{0%{transform:translateY(8px);opacity:0}100%{transform:translateY(0);opacity:1}}
+/* For elements centered via translateX(-50%): animation-fill-mode "both"
+   makes the keyframe transform REPLACE the base transform, so the plain
+   ppFadeUp permanently un-centered the caption pill (it sat half a width
+   right of center). This variant carries the centering through. */
+@keyframes ppFadeUpCentered{0%{transform:translate(-50%,8px);opacity:0}100%{transform:translate(-50%,0);opacity:1}}
 @keyframes ppDropIn{0%{transform:translate(-50%,-10px);opacity:0}100%{transform:translate(-50%,0);opacity:1}}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
 
@@ -190,6 +349,15 @@
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p) 0%, transparent); }
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--p) 0%, transparent); }
 }
+
+/* v0.12.0: Polish — buttery hover transitions across all interactive elements */
+button, .toast, .qa-chip, .nudge-chip, .nudge-recent-chip,
+.palette-btn, .pause-capture, .pin-btn, .undo-btn, .interrupt-btn,
+.export-trigger, .export-opt, .sm-tab, .ui-settings-trigger,
+.notes-clear, .resume-yes, .resume-no, .qcard-skip, .qcard-opt,
+.qcard-send, .nudge-send, .caption-fab .cf-opt, .ui-toggle {
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
 button:active { transform: translateY(1px); }
 .pin-btn {
   background: transparent;
@@ -223,6 +391,14 @@ button:active { transform: translateY(1px); }
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+}
+
+/* Brand accent on the side-panel header so the orange identity is visible
+ * the moment ChampPreso loads, without disturbing the Excalidraw canvas. */
+.brand h1 {
+  color: var(--cg-orange);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .brand p { color: var(--cg-warm-gray); }
 @keyframes notes-overlay-fade {
@@ -521,20 +697,6 @@ button:disabled {
 .shell[data-panel-theme="dark"] .scoped-edit-bar .se-count { color: var(--champ-ember-glow); }
 .shell[data-panel-theme="dark"] .scoped-edit-bar .se-input { color: #F4F5F7; }
 .shell[data-panel-theme="dark"] .scoped-edit-bar .se-input::placeholder { color: rgba(244, 245, 247, 0.42); }
-
-/* ============================================================================
-   === Setup screen (redesign) ===
-   Translated from docs/design-handoff/frontend-source/ChampPreso-Shell.dc.html
-   (SETUP RAIL + SETTINGS SHEET). Overlays the full-bleed canvas during the
-   pre-session "setup" phase. Values match the design source's inline styles;
-   colours resolve through the Task 2 --champ-* tokens.
-   ========================================================================== */
-
-/* In setup the legacy right panel is unmounted, so collapse the shell to a
-   single full-width canvas column (the rail floats over it). */
-.shell.mode-staging {
-  grid-template-columns: minmax(0, 1fr);
-}
 .setup-brand {
   font-family: var(--font-display);
   font-weight: 600;
@@ -953,6 +1115,31 @@ button:disabled {
   width: 6px;
   height: 6px;
 }
+
+/* ============================================================================
+   === Listening / Paused screen (redesign "halo" layout) ===
+   Overlays the full-bleed canvas: a thin top status strip, a status drawer,
+   a floating question card, a caption pill, and a floating bottom steer bar.
+   Translated from docs/design-handoff/frontend-source/ChampPreso-Shell.dc.html
+   (TOP STATUS STRIP, STATUS DRAWER, QUESTION CARD, CAPTION PILL, STEER BAR).
+   ========================================================================== */
+
+/* ---- TOP STATUS STRIP ---- */
+.ls-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: rgba(11, 13, 18, 0.96);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  color: var(--champ-snow);
+  z-index: 20;
+}
 .ls-brand {
   font-family: var(--font-display);
   font-weight: 600;
@@ -1300,13 +1487,13 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   z-index: 15;
-  animation: ppFadeUp 0.22s both;
+  animation: ppFadeUpCentered 0.22s both;
   pointer-events: none;
 }
 
 /* ---- SETUP: top strip + the one question ---- */
 .setup-strip {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
@@ -1353,6 +1540,20 @@ button:disabled {
   gap: 16px;
   text-align: center;
   z-index: 15;
+}
+/* Once the canvas has content the question docks to the bottom so nothing
+   covers the drawing. Same controls, tighter. */
+.sq-card.sq-docked {
+  top: auto;
+  bottom: 18px;
+  transform: translateX(-50%);
+  background: rgba(255, 253, 248, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--champ-cloud);
+  border-radius: 14px;
+  padding: 14px 18px;
+  gap: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
 }
 .sq-card.sq-docked .sq-title { font-size: 16px; }
 .sq-card.sq-docked .sq-hint { display: none; }
@@ -1443,6 +1644,30 @@ button:disabled {
   line-height: 1.45;
 }
 
+/* The one-question card must read on both canvas themes: ink on the paper
+   canvas, paper on the dark one. mode-staging keeps the Excalidraw toolbar
+   clear of the 40px setup strip. */
+.shell[data-panel-theme="dark"] .sq-title { color: var(--champ-paper, #fafaf7); }
+.shell[data-panel-theme="dark"] .sq-hint { color: var(--champ-mist); }
+.shell[data-panel-theme="dark"] .sq-restore-btn { color: var(--champ-mist); }
+.shell[data-panel-theme="dark"] .sq-restore-btn:hover { color: #fff; }
+.shell[data-panel-theme="dark"] .sq-input {
+  background: #0b0d12;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--champ-paper, #fafaf7);
+}
+.shell[data-panel-theme="dark"] .sq-chip {
+  background: rgba(11, 13, 18, 0.8);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--champ-cloud);
+}
+.shell[data-panel-theme="dark"] .sq-chip:hover,
+.shell[data-panel-theme="dark"] .sq-chip.active { color: #fff; }
+.shell[data-panel-theme="dark"] .sq-card.sq-docked {
+  background: rgba(11, 13, 18, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 /* Settings: the three questions + Advanced disclosure. */
 .ss-q {
   font-family: var(--font-display);
@@ -1525,6 +1750,12 @@ button:disabled {
   gap: 10px;
   padding-right: 8px;
 }
+.ls-caption--error > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ls-caption-retry {
   height: 24px;
   padding: 0 11px;
@@ -1538,6 +1769,9 @@ button:disabled {
 }
 .ls-caption-retry:hover {
   background: rgba(239, 68, 68, 0.28);
+}
+.ls-caption--lifted {
+  bottom: 122px;
 }
 .ls-strip-iconbtn {
   padding: 0 8px;
@@ -1645,8 +1879,41 @@ button:disabled {
   background: rgba(255, 107, 53, 0.12);
   color: var(--champ-snow);
 }
+
+/* ---- typed-turn toggle: a quiet keyboard button on the left of the steer bar.
+   Lighter than the ember send button — this is "type it", not "send a steer". ---- */
+.ls-type-toggle {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--champ-mist);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
 .ls-type-toggle:hover { color: var(--champ-snow); background: rgba(255, 255, 255, 0.06); }
 .ls-type-toggle.active { color: var(--champ-ember); background: rgba(255, 107, 53, 0.1); }
+
+/* ---- typed-turn row: a distinct, lighter input above the steer bar. Matches
+   the steer bar's blur/radius/shadow but carries no ember border by default. ---- */
+.ls-typed {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(11, 13, 18, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px 8px 6px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  animation: ppFadeUp 0.2s both;
+}
 .ls-typed-eyebrow {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1679,6 +1946,25 @@ button:disabled {
 }
 .ls-typed-send:hover:not(:disabled) { background: var(--champ-ember-glow); }
 .ls-typed-send:disabled { background: #2A2F3D; cursor: default; opacity: 0.7; }
+
+/* ================= ASK THE BOARD =================
+   The question surface. Shares the steer bar's blur/radius/shadow language so
+   it reads as part of the same control cluster, but leans cyan rather than
+   ember: steering and typing change the board, asking does not. */
+.ls-ask-toggle {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--champ-mist);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
 .ls-ask-toggle:hover { color: var(--champ-snow); background: rgba(255, 255, 255, 0.06); }
 .ls-ask-toggle.active { color: #22D3EE; background: rgba(34, 211, 238, 0.12); }
 
