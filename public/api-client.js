@@ -108,6 +108,16 @@ export function sendTypedTurn(text) {
   return request("/api/session/say", { method: "POST", body: { text } });
 }
 
+// Prune branch: preview what one selected element would take with it, then
+// remove the branch atomically. Both live-mode only.
+export function sendPrunePreview(elementId) {
+  return request("/api/session/prune-preview", { method: "POST", body: { elementId } });
+}
+
+export function sendPrune(elementId) {
+  return request("/api/session/prune", { method: "POST", body: { elementId } });
+}
+
 export function resetSession() {
   return request("/api/session/reset", { method: "POST" });
 }

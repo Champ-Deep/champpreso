@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; }
+    a { color: #FF6B35; } a:hover { color: #FF8C5A; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1440px; height: 900px; background: #F4F4F0; background-image: radial-gradient(circle, #ECEAE4 1px, transparent 1px); background-size: 26px 26px; overflow: hidden;">
+
+  <!-- ============ TOP STRIP ============ -->
+  <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; background: rgba(11,13,18,0.96); display: flex; align-items: center; gap: 12px; padding: 0 14px; color: #FAFAF7; box-sizing: border-box; z-index: 5;">
+    <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: -0.02em;">Champ<span style="color: #FF6B35;">Preso</span></div>
+    <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1);"></div>
+    <div style="width: 8px; height: 8px; border-radius: 50%; background: #10B981;"></div>
+    <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px;">Whiteboarding</div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280;">14:07</div>
+    <div style="flex-grow: 1;"></div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280;">$0.04</div>
+    <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1);"></div>
+    <button style="height: 24px; padding: 0 12px; background: transparent; border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; color: #D1D5DB; font-size: 12px; cursor: pointer;">End</button>
+  </div>
+
+  <!-- ============ CANVAS · a tree, with one branch selected for pruning ============ -->
+  <div style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;">
+
+    <!-- root -->
+    <div style="position: absolute; left: 596px; top: 60px; width: 248px; height: 78px; background: #FFE8CC; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(-0.3deg);">
+      <span style="font-family: Caveat, cursive; font-size: 22px; color: #1e1e1e;">Fix onboarding</span>
+    </div>
+
+    <!-- branches out of root -->
+    <svg style="position: absolute; left: 380px; top: 138px;" width="680" height="80" viewBox="0 0 680 80" fill="none">
+      <path d="M340 4 C 340 30, 150 32, 148 72" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="M141 62 L148 76 L156 63" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+      <path d="M340 4 C 340 30, 520 32, 528 72" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" opacity="0.55"></path>
+      <path d="M521 62 L528 76 L536 63" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55"></path>
+    </svg>
+
+    <!-- LEFT branch · untouched -->
+    <div style="position: absolute; left: 404px; top: 218px; width: 248px; height: 78px; background: #D3F9D8; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(0.3deg);">
+      <span style="font-family: Caveat, cursive; font-size: 21px; color: #1e1e1e; text-align: center;">Named owner<br>per handoff</span>
+    </div>
+    <svg style="position: absolute; left: 508px; top: 296px;" width="40" height="66" viewBox="0 0 40 66" fill="none">
+      <path d="M20 4 C 24 24, 16 44, 20 58" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="M13 50 L20 62 L27 49" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    </svg>
+    <div style="position: absolute; left: 414px; top: 362px; width: 228px; height: 66px; background: #FFF3BF; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(-0.4deg);">
+      <span style="font-family: Caveat, cursive; font-size: 20px; color: #1e1e1e;">Ops owns week 1</span>
+    </div>
+
+    <!-- RIGHT branch · SELECTED, plus everything downstream -->
+    <div style="position: absolute; left: 764px; top: 200px; width: 380px; height: 300px; border: 2px solid rgba(239,68,68,0.5); border-radius: 18px; background: rgba(239,68,68,0.07);"></div>
+
+    <div style="position: absolute; left: 784px; top: 218px; width: 248px; height: 78px; background: #D0EBFF; border: 2px solid #EF4444; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(-0.2deg); opacity: 0.72;">
+      <span style="font-family: Caveat, cursive; font-size: 21px; color: #1e1e1e; text-align: center;">Bundle into<br>Pro tier</span>
+    </div>
+
+    <svg style="position: absolute; left: 800px; top: 296px;" width="230" height="66" viewBox="0 0 230 66" fill="none" opacity="0.5">
+      <path d="M108 4 C 108 24, 44 30, 40 58" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="M33 50 L40 62 L47 49" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+      <path d="M108 4 C 108 24, 172 30, 178 58" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="M171 50 L178 62 L185 49" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    </svg>
+
+    <div style="position: absolute; left: 782px; top: 362px; width: 160px; height: 62px; background: #E5DBFF; border: 1.5px dashed #EF4444; border-radius: 10px; display: flex; align-items: center; justify-content: center; opacity: 0.55; transform: rotate(0.4deg);">
+      <span style="font-family: Caveat, cursive; font-size: 19px; color: #1e1e1e;">Pricing change</span>
+    </div>
+    <div style="position: absolute; left: 958px; top: 362px; width: 168px; height: 62px; background: #E5DBFF; border: 1.5px dashed #EF4444; border-radius: 10px; display: flex; align-items: center; justify-content: center; opacity: 0.55; transform: rotate(-0.5deg);">
+      <span style="font-family: Caveat, cursive; font-size: 19px; color: #1e1e1e;">Migrate existing</span>
+    </div>
+
+    <!-- contextual prune control · appears on selection, nowhere else -->
+    <div style="position: absolute; left: 764px; top: 516px; display: flex; align-items: center; gap: 8px; background: rgba(11,13,18,0.94); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 7px 9px 7px 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.45);">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #6B7280;">BRANCH SELECTED</span>
+      <span style="color: #D1D5DB; font-size: 12.5px;">3 shapes + 2 arrows</span>
+      <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.12);"></div>
+      <button style="display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; background: rgba(239,68,68,0.16); border: 1px solid rgba(239,68,68,0.42); border-radius: 7px; color: #FCA5A5; font-size: 12px; cursor: pointer;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+        Prune branch
+      </button>
+      <button style="height: 28px; padding: 0 12px; background: transparent; border: 1px solid rgba(255,255,255,0.16); border-radius: 7px; color: #D1D5DB; font-size: 12px; cursor: pointer;">Keep</button>
+    </div>
+
+  </div>
+
+  <!-- ============ CAPTION ============ -->
+  <div style="position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%); background: rgba(11,13,18,0.86); border-radius: 9999px; padding: 7px 16px; color: #D1D5DB; font-size: 13px; white-space: nowrap; opacity: 0.62;">
+    “let’s park the pricing thread entirely”
+  </div>
+
+  <!-- ============ BOTTOM DOCK ============ -->
+  <div style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 520px;">
+    <div style="display: flex; align-items: center; gap: 8px; background: rgba(11,13,18,0.94); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 6px 8px 6px 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"></path></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+      <div style="flex-grow: 1; color: #6B7280; font-size: 13px;">Whisper a steer…</div>
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #2A2F3D; display: flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FAFAF7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

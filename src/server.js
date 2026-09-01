@@ -17,17 +17,20 @@ import {
   resolveAskProviderFromSettings,
 } from "./agent-provider.js";
 import { createGroqTranscription as createDefaultGroqTranscription } from "./groq-transcription.js";
+import { createDeepgramTranscription as createDefaultDeepgramTranscription } from "./deepgram-transcription.js";
 import { createKnowledgeBase } from "./knowledge-base.js";
 import { createMcpToolset } from "./mcp-client.js";
 import { createModelCatalog } from "./model-catalog.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
-import { describeWhiteboard } from "./whiteboard-semantics.js";
+import { describeWhiteboard, computeDownstreamSubtree } from "./whiteboard-semantics.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
 import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "./whiteboard-elements.js";
-import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
+import { extractWhiteboardKeywords, parseGlossaryTerms } from "./whiteboard-keywords.js";
+import { createSalienceClassifier } from "./salience-gate.js";
+import { detectAgentTouchedCandidates, detectUserTouchedCandidates, expireStaleCandidates, markNewCandidates, promoteCandidates } from "./candidate-lifecycle.js";
 import {
   applyWhiteboardEditOperations,
   formatLineNumberedWhiteboard,
@@ -106,6 +109,40 @@ export async function startServer(options) {
 
   const httpServer = createHttpServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  // Salience gate default wiring. options.classifySalience is set (or
+  // cleared) from settings at boot and again on every settings save, so a
+  // Groq key added or the gate toggled mid-run takes effect without a
+  // restart - while keyless/disabled setups keep today's fully synchronous
+  // enqueue path (options.classifySalience stays undefined). Reads ONLY the
+  // settings store / options.env - never process.env directly - so test runs
+  // in a shell that exports GROQ_API_KEY stay network-free.
+  const injectedClassifySalience = options.classifySalience;
+  let cachedSalienceClassifier = null;
+  let cachedSalienceKey = null;
+  async function refreshSalienceClassifier() {
+    if (injectedClassifySalience) return; // tests own the seam
+    if (!options.settingsStore) return;
+    const settings = await options.settingsStore.load();
+    const enabled = settings?.gate?.enabled !== false;
+    const apiKey = settings?.apiKeys?.groq || options.env?.GROQ_API_KEY || "";
+    if (!enabled || !apiKey) {
+      options.classifySalience = undefined;
+      cachedSalienceClassifier = null;
+      cachedSalienceKey = null;
+      return;
+    }
+    if (!cachedSalienceClassifier || cachedSalienceKey !== apiKey) {
+      cachedSalienceClassifier = createSalienceClassifier({
+        apiKey,
+        fetchImpl: options.salienceFetch ?? globalThis.fetch,
+      });
+      cachedSalienceKey = apiKey;
+    }
+    options.classifySalience = cachedSalienceClassifier;
+  }
+  await refreshSalienceClassifier();
+
   const state = createWhiteboardSession({
     options,
     wss,
@@ -197,10 +234,22 @@ export async function startServer(options) {
     res.json(await modelCatalog.verify(provider, model, { apiKey: await apiKeyFor(provider) }));
   });
 
-  app.post("/api/session/reset", (_req, res) => {
+  // The glossary is config, not session content: every vocabulary push
+  // starts from it, and clearing a session falls back TO it, not to [].
+  async function glossaryTerms() {
+    if (!options.settingsStore) return [];
+    const settings = await options.settingsStore.load();
+    return parseGlossaryTerms(settings?.transcription?.glossary);
+  }
+  function mergeKeywords(glossary, staging) {
+    const seen = new Set(glossary.map((t) => t.toLowerCase()));
+    return [...glossary, ...staging.filter((t) => !seen.has(t.toLowerCase()))];
+  }
+
+  app.post("/api/session/reset", async (_req, res) => {
     state.reset();
     askHistory.length = 0;
-    transcription.setSessionContext({ keywords: [] });
+    transcription.setSessionContext({ keywords: await glossaryTerms() });
     broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
     broadcastCost(wss, state);
     res.json({ ok: true });
@@ -231,8 +280,8 @@ export async function startServer(options) {
       stagingScreenshot,
       notesAndTranscripts,
     });
-    const keywords = extractWhiteboardKeywords(stagingElements);
-    console.log(`[champpreso] preso/start: ${keywords.length} staging keyword(s) for transcription bias` +
+    const keywords = mergeKeywords(await glossaryTerms(), extractWhiteboardKeywords(stagingElements));
+    console.log(`[champpreso] preso/start: ${keywords.length} keyword(s) for transcription bias (glossary + staging)` +
       (notesAndTranscripts ? `, ${notesAndTranscripts.length} chars of notes/transcripts` : ""));
     transcription.setSessionContext({ keywords });
     askHistory.length = 0;
@@ -273,10 +322,10 @@ export async function startServer(options) {
     res.json({ ok: true });
   });
 
-  app.post("/api/session/back-to-staging", (_req, res) => {
+  app.post("/api/session/back-to-staging", async (_req, res) => {
     state.backToStaging();
     askHistory.length = 0;
-    transcription.setSessionContext({ keywords: [] });
+    transcription.setSessionContext({ keywords: await glossaryTerms() });
     broadcast(wss, { type: "mode", mode: state.mode, lifecycleMode: toWireMode(state.mode) });
     res.json({ ok: true });
   });
@@ -410,7 +459,7 @@ export async function startServer(options) {
       return res.status(400).json({ error: "Selected elements are not on the current canvas." });
     }
     state.setScopedEdit({ selectedIds, lineNumbers, instruction });
-    state.queueTranscript(instruction);
+    state.queueTranscript(instruction, { bypassGate: true });
     res.json({ ok: true, selectedIds, lineNumbers, instruction });
   });
   // v0.15.0: typed turn. A no-voice path to capture an idea and have the agent
@@ -424,7 +473,7 @@ export async function startServer(options) {
     if (!text) {
       return res.status(400).json({ error: "Text required." });
     }
-    state.queueTranscript(text);
+    state.queueTranscript(text, { bypassGate: true });
     res.json({ ok: true, text });
   });
 
@@ -465,6 +514,52 @@ export async function startServer(options) {
       return res.status(500).json({ error: `Seeding turn failed: ${error.message}` });
     }
     res.json({ ok: true, elementCount: state.elements.length });
+  });
+
+  // ===== PRUNE BRANCH =====
+  // Kill a thread and everything downstream of it in one atomic action.
+  // Preview is side-effect free; prune snapshots first so Undo can revert it
+  // exactly like an agent turn.
+  function resolvePruneTarget(req, res) {
+    if (state.mode !== "live") {
+      res.status(409).json({ error: "Prune is only available while whiteboarding." });
+      return null;
+    }
+    const elementId = String(req.body?.elementId ?? "").trim();
+    if (!elementId || !state.elements.some((el) => el?.id === elementId)) {
+      res.status(400).json({ error: "elementId must name an element on the current canvas." });
+      return null;
+    }
+    return elementId;
+  }
+
+  app.post("/api/session/prune-preview", express.json(), (req, res) => {
+    const elementId = resolvePruneTarget(req, res);
+    if (!elementId) return;
+    const sub = computeDownstreamSubtree(state.elements, elementId, { pinnedIds: state.pinnedIds ?? new Set() });
+    res.json({ ok: true, elementId, ids: [...sub.allIds], shapes: sub.shapes, arrows: sub.arrows });
+  });
+
+  app.post("/api/session/prune", express.json(), (req, res) => {
+    const elementId = resolvePruneTarget(req, res);
+    if (!elementId) return;
+    const sub = computeDownstreamSubtree(state.elements, elementId, { pinnedIds: state.pinnedIds ?? new Set() });
+    if (typeof state.snapshotForUndo === "function") state.snapshotForUndo();
+    state.elements = state.elements.filter((el) => !sub.allIds.has(el?.id));
+    for (const id of sub.allIds) {
+      state.candidates?.delete?.(id);
+      state.pinnedIds?.delete?.(id);
+    }
+    state.canvasDirtyForAgent = true;
+    broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
+    broadcast(wss, {
+      type: "branch:pruned",
+      ids: [...sub.allIds],
+      shapes: sub.shapes,
+      arrows: sub.arrows,
+      timestamp: new Date().toISOString(),
+    });
+    res.json({ ok: true, removed: sub.allIds.size, shapes: sub.shapes, arrows: sub.arrows });
   });
 
   app.post("/api/session/review", express.json(), async (req, res) => {
@@ -617,6 +712,7 @@ Extract the concrete decisions this group actually made (not aspirations, not op
     try {
       await options.settingsStore.save(req.body ?? {});
       await transcription.applyCurrent();
+      await refreshSalienceClassifier();
       const sanitized = await options.settingsStore.getSanitized();
       // Knowledge-base folders may have changed; rebuild the index lazily so
       // the next ask reads the new configuration without a server restart.
@@ -693,7 +789,19 @@ Extract the concrete decisions this group actually made (not aspirations, not op
         // (and during it). Frontend pushes the current scene here so the next
         // transcript turn has fresh elements available to the agent.
         if (state.mode === "live") {
+          // A user edit to a candidate is a confirmation - promote it before
+          // adopting the synced scene, so the dashed style solidifies.
+          const touched = state.candidates instanceof Map
+            ? detectUserTouchedCandidates({ prevElements: state.elements, nextElements: message.elements, candidates: state.candidates })
+            : [];
           state.elements = message.elements;
+          if (touched.length > 0) {
+            const res = promoteCandidates({ elements: state.elements, candidates: state.candidates, ids: touched });
+            state.elements = res.elements;
+            state.candidates = res.candidates;
+            state.canvasDirtyForAgent = true;
+            broadcast(wss, { type: "whiteboard:update", elements: state.elements }); persistLastSession(state.elements);
+          }
         }
       }
 
@@ -701,6 +809,7 @@ Extract the concrete decisions this group actually made (not aspirations, not op
         try {
           await options.settingsStore.save(message.patch ?? {});
           await transcription.applyCurrent();
+          await refreshSalienceClassifier();
           const sanitized = await options.settingsStore.getSanitized();
           broadcast(wss, { type: "settings", settings: sanitized });
           broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
@@ -799,10 +908,12 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       openaiTranscriptionModel: settings.transcription.openai.model,
       groqTranscriptionModel: settings.transcription.groq?.model,
       groqTranscriptionBaseURL: settings.transcription.groq?.baseURL,
+      deepgramModel: settings.transcription.deepgram?.model,
       env: {
         ...(options.env ?? process.env),
         OPENAI_API_KEY: settings.apiKeys?.openai || (options.env ?? process.env).OPENAI_API_KEY,
         GROQ_API_KEY: settings.apiKeys?.groq || (options.env ?? process.env).GROQ_API_KEY,
+        DEEPGRAM_API_KEY: settings.apiKeys?.deepgram || (options.env ?? process.env).DEEPGRAM_API_KEY,
       },
     };
   }
@@ -812,6 +923,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     const provider = settings ? settings.transcription.provider : options.transcriptionProvider;
     if (provider === "openai") return createDefaultOpenAITranscription;
     if (provider === "groq") return createDefaultGroqTranscription;
+    if (provider === "deepgram") return createDefaultDeepgramTranscription;
     return createDefaultMoonshineTranscription;
   }
 
@@ -820,6 +932,9 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       if (settings.transcription.provider === "openai") return `OpenAI ${settings.transcription.openai.model}`;
       if (settings.transcription.provider === "groq") {
         return `Groq ${settings.transcription.groq?.model ?? "whisper-large-v3-turbo"}`;
+      }
+      if (settings.transcription.provider === "deepgram") {
+        return `Deepgram ${settings.transcription.deepgram?.model ?? "nova-3"}`;
       }
       return `Moonshine ${settings.transcription.moonshine.model}`;
     }
@@ -836,7 +951,9 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       ? (settings?.transcription.openai.model ?? options.openaiTranscriptionModel ?? null)
       : activeProvider === "groq"
         ? (settings?.transcription.groq?.model ?? options.groqTranscriptionModel ?? null)
-        : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
+        : activeProvider === "deepgram"
+          ? (settings?.transcription.deepgram?.model ?? options.deepgramModel ?? null)
+          : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
 
     if (current && newLabel === label) return;
 
@@ -917,6 +1034,11 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   const mySession = state.session ?? { active: true };
   // v0.9.0: snapshot the canvas before the turn so Undo can revert.
   if (typeof state.snapshotForUndo === "function") state.snapshotForUndo();
+  // Candidate lifecycle: remember what existed before this turn so anything
+  // new in a hypothesis turn can be marked, and agent updates to existing
+  // candidates in a decision turn can promote them.
+  const candidateBeforeElements = Array.isArray(state.elements) ? [...state.elements] : [];
+  const candidateBeforeIds = new Set(candidateBeforeElements.map((el) => el?.id).filter(Boolean));
   // v0.8.0: clear the interrupt signal from the previous turn (in case the
   // user hit interrupt mid-thought; the next turn starts clean).
   if (typeof state.clearInterruptSignal === "function") state.clearInterruptSignal();
@@ -964,9 +1086,10 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
 
   const baseSystem = whiteboardSystemPrompt();
 
+  const settingsForTurn = options.settingsStore ? await options.settingsStore.load() : null;
   const agentProvider = options.agentProvider
-    ?? (options.settingsStore
-      ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
+    ?? (settingsForTurn
+      ? resolveAgentProviderFromSettings({ settings: settingsForTurn, env: options.env ?? process.env })
       : defaultWhiteboardAgentProvider(options));
   // Fold the primer text into the system prompt for both openai and codex
   // providers. The primer image (if any) stays in messages[0] - system prompts
@@ -1012,47 +1135,37 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             y: z.number().describe("Canvas y coordinate for the top-left of the rendered diagram."),
           }).describe("Where on the canvas to place the rendered diagram."),
           scale: z.number().min(0.4).max(3).optional().describe("Optional scale factor. 1.0 default."),
+          intent: z.string().min(1).max(60).describe("Plain words for the person watching: what you are doing right now (e.g. \"effort vs impact 2x2\", \"capturing the Friday decision\"). Shown live on screen."),
         }),
-        execute: async ({ syntax, anchor, scale }) => {
+        execute: async ({ syntax, anchor, scale, intent }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
           if (typeof state.checkToolCallLoop === "function") {
             const sig = `${arguments[1]?.toolCallId ?? ""}|${JSON.stringify(arguments[0] ?? {}).slice(0, 200)}`;
             if (state.checkToolCallLoop(sig)) return "LOOP_DETECTED: you have called the same tool with the same input 3 times in a row. Stop and try a different approach, or call ask_user_question.";
           }
+          broadcastAgentIntent(wss, { phase: "drawing", intent });
+          state.turnDrewSomething = true;
           const id = state.renderMermaid({ syntax, anchor, scale });
           options.onAgentEvent?.({ type: "tool:end", tool: "render_mermaid", result: { id, anchor, syntax }, timestamp: new Date().toISOString() });
           return `Mermaid diagram rendering id=${id} at (${anchor.x}, ${anchor.y}). The shapes will appear on the canvas as editable Excalidraw elements within ~500ms and be included in the next turn's whiteboard state. Do not call whiteboard_apply on the same turn - let the render land first.`;
-        },
-      }),
-      declare_zone: tool({
-        description: "Declare which canvas zone you are currently working in. The user sees a small floating chip showing 'Working in: SKETCHES' / 'STRUCTURED' / 'NOTES'. Call this when you shift the focus of the canvas - for example, when you finish a clean diagram and start ideating again. Always declare at the start of a topic. ZONES: sketches = quick ideation, sticky-note-style rectangles, scribbles, capture mode. structured = polished diagrams (Mermaid output, patterns, formal layouts). notes = standalone text blocks for transcript-derived bullets, decisions, action items.",
-        inputSchema: z.object({
-          zone: z.enum(["sketches", "structured", "notes"]).describe("The zone you are working in this turn."),
-        }),
-        execute: async ({ zone }) => {
-          if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
-          if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
-          if (typeof state.checkToolCallLoop === "function") {
-            const sig = `${arguments[1]?.toolCallId ?? ""}|${JSON.stringify(arguments[0] ?? {}).slice(0, 200)}`;
-            if (state.checkToolCallLoop(sig)) return "LOOP_DETECTED: you have called the same tool with the same input 3 times in a row. Stop and try a different approach, or call ask_user_question.";
-          }
-          state.declareZone(zone);
-          return `Zone set to ${zone}. The user sees this on the canvas.`;
         },
       }),
       whiteboard_overwrite: tool({
         description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
         inputSchema: z.object({
           elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
+          intent: z.string().min(1).max(60).describe("Plain words for the person watching: what you are doing right now (e.g. \"effort vs impact 2x2\", \"capturing the Friday decision\"). Shown live on screen."),
         }),
-        execute: async ({ elements }) => {
+        execute: async ({ elements, intent }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
           if (typeof state.checkToolCallLoop === "function") {
             const sig = `${arguments[1]?.toolCallId ?? ""}|${JSON.stringify(arguments[0] ?? {}).slice(0, 200)}`;
             if (state.checkToolCallLoop(sig)) return "LOOP_DETECTED: you have called the same tool with the same input 3 times in a row. Stop and try a different approach, or call ask_user_question.";
           }
+          broadcastAgentIntent(wss, { phase: "drawing", intent });
+          state.turnDrewSomething = true;
           options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_overwrite", input: { elements }, timestamp: new Date().toISOString() });
           const normalizedElements = normalizeWhiteboardElements(elements);
           state.elements = normalizedElements;
@@ -1073,8 +1186,9 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
             focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
           }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
+          intent: z.string().min(1).max(60).describe("Plain words for the person watching: what you are doing right now (e.g. \"effort vs impact 2x2\", \"capturing the Friday decision\"). Shown live on screen."),
         }),
-        execute: async ({ operations, viewport }) => {
+        execute: async ({ operations, viewport, intent }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           if (state.interruptSignal?.aborted) return "INTERRUPTED: user cancelled this turn. Stop drawing, do not call any more tools.";
           if (typeof state.checkToolCallLoop === "function") {
@@ -1088,6 +1202,8 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             dumpToolCall("whiteboard_apply", { operations, viewport }, state.elements.map((el) => el.id), msg);
             return msg;
           }
+          broadcastAgentIntent(wss, { phase: "drawing", intent });
+          state.turnDrewSomething = true;
           options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_apply", input: { operations, viewport }, timestamp: new Date().toISOString() });
 
           let canvasResult = "";
@@ -1139,7 +1255,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
 
   const result = await withTimeout(
     runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn }),
-    options.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+    options.agentTimeoutMs ?? settingsForTurn?.ui?.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
     "Whiteboard agent timed out",
   );
   logAgentUsage("turn", result, {
@@ -1168,12 +1284,55 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     }
   }
 
+  // ---- candidate lifecycle (mechanical - never trusts the model) ----
+  if (mySession.active && state.candidates instanceof Map) {
+    let els = state.elements;
+    let cands = state.candidates;
+    let changed = false;
+    const turn = state.turnIdCounter ?? 0;
+    // A decision turn updating a candidate is the conversation confirming it.
+    if (state.turnSalience === "decision") {
+      const touched = detectAgentTouchedCandidates({ beforeElements: candidateBeforeElements, afterElements: els, candidates: cands });
+      const res = promoteCandidates({ elements: els, candidates: cands, ids: touched });
+      if (res.promotedIds.length > 0) changed = true;
+      els = res.elements;
+      cands = res.candidates;
+    }
+    // A hypothesis turn births candidates: everything new renders provisional.
+    if (state.turnSalience === "hypothesis") {
+      const res = markNewCandidates({ beforeIds: candidateBeforeIds, elements: els, candidates: cands, turn });
+      if (res.candidates.size !== cands.size) changed = true;
+      els = res.elements;
+      cands = res.candidates;
+    }
+    // Unconfirmed candidates quietly expire once the room has moved on.
+    const exp = expireStaleCandidates({ elements: els, candidates: cands, turn, pinnedIds: state.pinnedIds ?? new Set() });
+    els = exp.elements;
+    cands = exp.candidates;
+    if (exp.expiredIds.length > 0) {
+      changed = true;
+      broadcast(wss, { type: "candidate:expired", ids: exp.expiredIds, timestamp: new Date().toISOString() });
+    }
+    state.candidates = cands;
+    if (changed) {
+      state.elements = els;
+      state.canvasDirtyForAgent = true;
+      broadcast(wss, { type: "whiteboard:update", elements: els }); persistLastSession(els);
+    }
+  }
+
   if (mySession.active) {
     state.agentHistory = appendWhiteboardAgentHistory(state.agentHistory, {
       transcript,
     });
   }
   return result;
+}
+
+// One narration surface: agent:intent messages compose the "what is it doing"
+// story (thinking -> drawing -> idle/noop or error) for the caption.
+export function broadcastAgentIntent(wss, fields) {
+  broadcast(wss, { type: "agent:intent", timestamp: new Date().toISOString(), ...fields });
 }
 
 // Returned to the model when a tool is called after the user has ended the
@@ -1293,13 +1452,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
           syntax: z.string().min(8).max(8000),
           anchor: z.object({ x: z.number(), y: z.number() }),
           scale: z.number().min(0.4).max(3).optional(),
-        }),
-        execute: noop,
-      }),
-      declare_zone: tool({
-        description: "Declare which canvas zone you are currently working in: sketches, structured, or notes. Use at the start of each topic.",
-        inputSchema: z.object({
-          zone: z.enum(["sketches", "structured", "notes"]),
+          intent: z.string().min(1).max(60),
         }),
         execute: noop,
       }),
@@ -1307,6 +1460,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
         description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
         inputSchema: z.object({
           elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
+          intent: z.string().min(1).max(60),
         }),
         execute: noop,
       }),
@@ -1319,6 +1473,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
             zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
             focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
           }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
+          intent: z.string().min(1).max(60),
         }),
         execute: noop,
       }),
@@ -1795,10 +1950,15 @@ function formatCurrentCanvasTask(elements, latestScreenshot, state) {
   const pinnedList = state && state.pinnedIds && state.pinnedIds.size > 0
     ? `\n\nPINNED IDS (do not modify or delete): ${JSON.stringify(Array.from(state.pinnedIds))}`
     : "";
+  const salienceLine = state?.turnSalience === "hypothesis"
+    ? '\n\nSALIENCE: hypothesis - the speaker is exploring, not deciding. Draw normally; the system will automatically render the shapes you ADD this turn as dashed 50%-opacity CANDIDATES. Do not style them yourself.'
+    : state?.turnSalience === "decision"
+      ? "\n\nSALIENCE: decision - the speaker settled something. Draw committed. If an existing dashed candidate is what got confirmed, update or replace that element (same id) and the system will solidify it."
+      : "";
   const scoped = state && state.scopedEdit && state.scopedEdit.lineNumbers?.length > 0
     ? `\n\nSCOPED EDIT — the user drag-selected specific elements and wants you to edit ONLY them. Modify ONLY lines ${JSON.stringify(state.scopedEdit.lineNumbers)} (element ids ${JSON.stringify(state.scopedEdit.selectedIds)}). Treat every other element as locked: do not change, move, restyle, or delete it. You MAY add new elements if the instruction needs them. Apply this instruction: "${state.scopedEdit.instruction}".`
     : "";
-  const text = `Current line-numbered whiteboard content:\n${formatLineNumberedWhiteboard(elements)}${pinnedList}${scoped}\n\nTask:\nUse the latest speaker turn and prior context to decide whether the canvas should change.\n\nBEFORE choosing a layout, check the "Reference context for this presentation" section in your system instructions: it contains the staging area the user prepared, including any diagrams. If the speaker has just reached a topic that the staging diagrams already cover, REUSE that staging structure on the live canvas - same shapes, same labels, same arrangement, same colors - rather than inventing a different layout. The staging is the user's pre-approved visualization for those topics; only invent something new when staging doesn't cover the topic at all.\n\nIf updating, use whiteboard_apply for targeted changes (operations + viewport in ONE call). Use whiteboard_overwrite only when you need to clear, reset, or start fresh. Keep the canvas organized around the core concepts, not the transcript sequence. In the same whiteboard_apply call, also include viewport with action "scroll_to_content" AND focus_ids naming the elements the speaker is currently talking about, so the viewport centers exactly on the active talking point - never call scroll_to_content without focus_ids. Make ONE whiteboard_apply call per turn whenever possible; do not split edits and viewport into back-to-back calls. The attached screenshot (when present) shows the audience's current viewport - use it to verify your edits actually look good and that the right region is visible.`;
+  const text = `Current line-numbered whiteboard content:\n${formatLineNumberedWhiteboard(elements)}${pinnedList}${scoped}${salienceLine}\n\nTask:\nUse the latest speaker turn and prior context to decide whether the canvas should change.\n\nBEFORE choosing a layout, check the "Reference context for this presentation" section in your system instructions: it contains the staging area the user prepared, including any diagrams. If the speaker has just reached a topic that the staging diagrams already cover, REUSE that staging structure on the live canvas - same shapes, same labels, same arrangement, same colors - rather than inventing a different layout. The staging is the user's pre-approved visualization for those topics; only invent something new when staging doesn't cover the topic at all.\n\nIf updating, use whiteboard_apply for targeted changes (operations + viewport in ONE call). Use whiteboard_overwrite only when you need to clear, reset, or start fresh. Keep the canvas organized around the core concepts, not the transcript sequence. In the same whiteboard_apply call, also include viewport with action "scroll_to_content" AND focus_ids naming the elements the speaker is currently talking about, so the viewport centers exactly on the active talking point - never call scroll_to_content without focus_ids. Make ONE whiteboard_apply call per turn whenever possible; do not split edits and viewport into back-to-back calls. The attached screenshot (when present) shows the audience's current viewport - use it to verify your edits actually look good and that the right region is visible.`;
   if (typeof latestScreenshot === "string" && latestScreenshot) {
     return [
       { type: "text", text },
@@ -1815,7 +1975,7 @@ YOUR JOB.
 You are the world's best brainstorming partner. You listen to a speaker thinking aloud and you draw their ideas back to them in real time as a beautiful, structured, evolving visual artifact. The board is a thinking surface, not a presentation deck. Every turn should make the speaker's thinking clearer, not just record their words.
 
 VISUAL RICHNESS MANDATE (read this first, follow it always).
-1. Default to drawing. Every meaningful sentence makes the canvas change. Silence on the canvas while the speaker is actively speaking is a failure.
+1. Default to drawing. Every meaningful sentence makes the canvas change. Silence on the canvas while the speaker is actively speaking is a failure. If you are not certain what to draw, draw the strongest reasonable interpretation and refine on the next turn.
 2. Pick the right shape for the meaning, never the default rectangle for everything:
    - rectangle = concept, task, component, module, deliverable, idea
    - ellipse = person, actor, customer, external entity, role
@@ -1886,34 +2046,6 @@ L. ANNOTATED SCREENSHOT. Large central rectangle, callout text elements pointing
 
 When you start a topic, decide which pattern fits and declare it implicitly through your layout. Stick to that pattern's coordinate logic. Switching patterns mid-topic creates visual chaos.
 
-ASK QUESTIONS WHEN UNCERTAIN.
-You have an ask_user_question tool. Use it MORE than your instinct says. Specifically:
-- If you cannot tell who an unnamed referent is (a name, a project, "they", "the team"), ask.
-- If two reasonable interpretations of what was said would produce different diagrams, ask which one.
-- If you are about to invent a number, a date, or a relationship you did not hear, ask first.
-- If the speaker mentions a concept you do not have visual vocabulary for, ask which pattern they want.
-Estimate your confidence on each turn. Below 70% confidence on what to draw = call ask_user_question instead of inventing. Pair the question with 2-4 short tap-options. Do not block on the answer; keep drawing your best guess in parallel. The user can also nudge you mid-session via the Nudge bar; honor those nudges as authoritative on the next turn.
-
-SESSION MODES.
-The user picks a Session Mode in the side panel. The mode is set on this prompt's first system message section. Adapt your behavior:
-
-- STRATEGY mode (solo thinking): The user is thinking aloud, alone. Bias toward LISTENING and SYNTHESIZING. Draw less aggressively. Wait until you understand a coherent idea, then commit to one well-structured visual (Mermaid or a clean pattern). Quality over quantity. Ask more clarifying questions because you have time. Prefer Notes zone for capturing decisions.
-
-- PRESENTATION mode (live to audience): The user is presenting to others who are watching. Bias toward AGGRESSIVE DRAWING with polished output. Every meaningful sentence becomes a visible change. Prefer Structured zone with Mermaid + named patterns. Skip clarifying questions during the talk - just draw your best guess and refine. Captions matter; visual impact matters.
-
-- CO-THINKING mode (working session with another person): Multiple speakers present. Track who said what when possible. Bias toward STRUCTURED CAPTURE in the Notes zone alongside diagrams in Structured zone. Cluster ideas by speaker via shape color. Ask clarifying questions only when both speakers seem aligned but the diagram needs a tie-breaker.
-
-CANVAS ZONES.
-The canvas has three implicit zones the user can see via a floating chip. Use declare_zone at the start of each topic to set the active zone:
-
-- SKETCHES zone: quick ideation, sticky-note-style rectangles with handwritten-feeling labels, scribbles, capture mode. Coordinates roughly x:50-400, y:any. Use for: brainstorming, raw idea capture, "let me just throw something on the board."
-
-- STRUCTURED zone: polished diagrams. Mermaid output lands here. Patterns from the visual library land here. Coordinates roughly x:400-1000, y:any. Use for: when the user moves from "thinking" to "decided on this structure."
-
-- NOTES zone: standalone text blocks for transcript-derived bullets, decisions, action items, open questions. Coordinates roughly x:1000-1400, y:any. Use for: durable conclusions you want preserved.
-
-Declare your zone BEFORE drawing each turn. The user sees this on the canvas as a small chip and uses it to navigate.
-
 PINNED ELEMENTS.
 On every turn you receive a "PINNED IDS" list in the current canvas state message. These are elements the user has marked as authoritative. RULES:
 - NEVER call whiteboard_apply with a "replace" or "delete" operation targeting a pinned element's line.
@@ -1928,14 +2060,21 @@ Some turns include a "SCOPED EDIT" directive in the current canvas state message
 - You MAY insert brand-new elements if the instruction genuinely needs them (e.g. a new label on a selected box). Prefer the smallest change that satisfies the instruction.
 - Make the change in ONE whiteboard_apply call. You do not need to scroll the viewport unless the instruction implies it.
 
+CANDIDATES (provisional shapes).
+Turns arrive tagged by salience (a SALIENCE line in the canvas task message). In a "hypothesis" turn the system automatically renders the shapes you add as dashed, 50%-opacity candidates - do NOT set dashed stroke or reduced opacity yourself, and never mention candidacy in a label. When a later "decision" turn confirms an idea, update or replace that candidate element (same id) and the system solidifies it. Candidates left unconfirmed for two turns are removed automatically; only re-add one if the speaker genuinely returns to the idea.
+
 MULTI-SPEAKER SESSIONS.
 The transcript may include multiple speakers in a co-thinking session. Speaker turns are NOT explicitly labeled by the transcription engine in most cases. When you can infer from context that speakers have switched (different pronouns, different topics, "I think... vs you mentioned"), attribute ideas to the right person if a name was used. When the speaker count is ambiguous, treat it as one voice. If you successfully attribute an idea to a named speaker, optionally color-code that speaker's shapes with one consistent fill color and reuse it for their other contributions.
 
 INTERRUPTS.
 The user can hit an Interrupt button to cancel your in-flight turn. If you see a "[INTERRUPTED]" message in the transcript, drop whatever you were about to draw, acknowledge the cancellation silently (do not draw anything for this turn), and wait for the next transcript turn.
 
-CLARIFYING QUESTIONS GUIDANCE.
-Call it sparingly per topic (max 1 per topic, max 4 per session — these are real costs to the speaker's flow), but DO call it. A clarifying question that prevents a wrong-direction diagram saves more time than it costs. Never use this to confirm obvious things or narrate what you're doing.
+CLARIFYING QUESTIONS.
+You have an ask_user_question tool. Call it sparingly (max 1 per topic, max 2-3 per session - these are real costs to the speaker's flow), but DO call it when it prevents a wrong-direction diagram:
+- You cannot tell who an unnamed referent is (a name, a project, "they", "the team").
+- Two reasonable interpretations of what was said would produce different diagrams.
+- You are about to invent a number, a date, or a relationship you did not hear.
+Pair the question with 2-4 short tap-options. Do not block on the answer; keep drawing your best guess in parallel. Never use this to confirm obvious things or narrate what you're doing. The user can also nudge you mid-session via the steer bar; honor those nudges as authoritative on the next turn.
 
 ONE-SHOT EXAMPLE.
 Speaker says: "Goa Market is stalled. We need to pivot from B2C to B2B. Sunil thinks we can hit 10M if we focus the team on enterprise audit follow-ups."
@@ -1944,19 +2083,13 @@ Expected single whiteboard_apply call:
 - Insert ellipse (id "sunil", #FFE8D6) labeled "Sunil" at x:200 y:240 w:120 h:60.
 - Insert diamond (id "pivot", #FFF4EC) labeled "Pivot\\nB2C to B2B" at x:480 y:100 w:200 h:120.
 - Insert rectangle (id "enterprise-audit", #FFF4EC) labeled "Enterprise\\nAudit Follow-ups" at x:720 y:100 w:240 h:80.
-- Insert rectangle (id "target-10m", #F26722) labeled "10M Target" at x:720 y:240 w:200 h:60. (Wait, only one primary per viewport. Keep this neutral and only goa-headline gets primary. Restate: this rectangle is #FFF4EC.)
+- Insert rectangle (id "target-10m", #FFF4EC) labeled "10M Target" at x:720 y:240 w:200 h:60. (Only goa-headline gets the primary color - one primary per viewport.)
 - Insert arrow from goa-headline to pivot.
 - Insert arrow from pivot to enterprise-audit (labeled "if focus").
 - Insert arrow from enterprise-audit to target-10m.
 - Insert arrow from sunil to goa-headline (labeled "owns").
 - viewport: scroll_to_content with focus_ids ["goa-headline", "pivot", "enterprise-audit", "target-10m"].
 That is one tool call, 9 operations, 4 shape types, 4 arrows, two-tier color encoding, deliberate layout.
-
-DEFAULT TO DRAWING.
-For every meaningful sentence the speaker produces, the canvas should change. Silence on the canvas during active speech is a failure mode, not a virtue. If you are not certain what to draw, draw the strongest reasonable interpretation and refine on the next turn. The user can always nudge you via the side-panel Nudge bar (which arrives as a "STEER FROM USER" system message) if a layout is wrong.
-
-CLARIFYING QUESTIONS.
-You have an ask_user_question tool. Call it sparingly (max 1 per topic, max 2-3 per session) when you genuinely cannot decide between two reasonable interpretations or when you do not know a referent (e.g. "Sunil" is mentioned but you cannot tell if Sunil is a person, a team, or a project). Pair the question with 2-4 short tappable options when possible. The user may or may not answer; if they do, their answer arrives as a user message in a subsequent turn. Do not block waiting for an answer; keep drawing in the meantime. Never use this to confirm obvious things ("did you mean Goa?") or to narrate what you are doing.
 
 WORKING-SESSION CAPTURE TARGETS.
 Capture structure, decisions, owners, contradictions, open questions, dependencies, risks, and metrics. The transcript will not always label these explicitly; infer from context. Use Ink text for free-floating section headers when needed; never inside a shape.
@@ -1992,6 +2125,7 @@ Use the reference context's vocabulary verbatim where you can - the user has alr
 Never dump the entire reference context onto the canvas at the start. Surface relevant pieces only when the speaker brings them up; the canvas should still grow with the talk.
 
 When updating the canvas:
+- Every drawing tool call requires "intent": <=60 characters of plain words naming what you are doing, written for the person watching, not for logs (e.g. "effort vs impact 2x2", "capturing the Friday decision"). It is shown live on screen next to what was heard.
 - Use whiteboard_apply for normal incremental changes.
 - Use whiteboard_overwrite only when you need to clear, reset, or start fresh.
 - whiteboard_apply takes optional operations (edit ops) and an optional viewport command, and runs them together: edits land first, then the viewport moves.

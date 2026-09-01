@@ -3,6 +3,8 @@ import { WebSocket } from "ws";
 import { createSessionCostTracker } from "./session-cost.js";
 import { createTranscriptTurnQueue } from "./transcript-turn-queue.js";
 import { cleanTranscript, explainRejection } from "./transcript-hygiene.js";
+import { maxSalience } from "./salience-gate.js";
+import { promoteCandidates } from "./candidate-lifecycle.js";
 
 const FILLER_WORDS = new Set([
   "uh", "uhh", "uhhh", "um", "umm", "ummm", "ah", "ahh", "er", "erm",
@@ -60,12 +62,13 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     // gets populated; cleared when the user answers via /api/preso/answer.
     pendingQuestion: null,
     queueStats: null,
-    // v0.7.0: agent's declared current zone (SKETCHES/STRUCTURED/NOTES). The
-    // frontend renders a small floating chip on the canvas showing this.
-    activeZone: "structured",
     // v0.8.0: pinned element IDs. The agent is instructed not to modify or
     // delete these. Mutated by /api/preso/pin and /api/preso/unpin.
     pinnedIds: new Set(),
+    // Candidate registry: id -> { bornTurn, orig: { strokeStyle, opacity } }.
+    // Lives server-side (NOT element customData - the frontend sync strips
+    // customData on echo). See src/candidate-lifecycle.js.
+    candidates: new Map(),
     // v0.15.0: scoped edit. When the user drag-selects elements and types an
     // instruction, this holds { selectedIds, lineNumbers, instruction } for the
     // next turn. The agent is told to edit ONLY those elements, and a hard
@@ -155,18 +158,46 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
       if (!mySession.active) return;
       state.agentBusy = true;
       publishAgentStatus();
+      state.turnSalience = state.nextTurnSalience ?? null;
+      state.nextTurnSalience = null;
       state.turnIdCounter = (state.turnIdCounter || 0) + 1;
       const turnId = `turn-${state.turnIdCounter}-${Date.now()}`;
       broadcast(wss, { type: "agent:turn-start", turnId, transcript, timestamp: new Date().toISOString() });
+      // Narration: the turn is now visibly "thinking" about what was heard.
+      state.turnDrewSomething = false;
+      broadcast(wss, {
+        type: "agent:intent",
+        phase: "thinking",
+        heard: transcript.slice(0, 160),
+        timestamp: new Date().toISOString(),
+      });
       options.onAgentEvent?.({ type: "turn:start", transcript, timestamp: new Date().toISOString() });
       try {
         await runAgent({ transcript, state, wss, options });
         broadcast(wss, { type: "agent:turn-end", turnId, transcript, timestamp: new Date().toISOString() });
+        // Narration: a turn that drew nothing must still report - an invisible
+        // no-op is half of "I can't tell if it's working".
+        broadcast(wss, {
+          type: "agent:intent",
+          phase: "idle",
+          noop: !state.turnDrewSomething,
+          timestamp: new Date().toISOString(),
+        });
         options.onAgentEvent?.({ type: "turn:end", transcript, timestamp: new Date().toISOString() });
       } catch (error) {
         console.error("Whiteboard agent failed:", error);
         broadcast(wss, { type: "error", message: `Whiteboard agent failed: ${error.message}` });
         broadcast(wss, { type: "agent:turn-error", turnId, transcript, error: error.message, timestamp: new Date().toISOString() });
+        // Narration: say what broke in plain words and carry what was heard so
+        // the frontend can offer Try Again without losing the utterance.
+        broadcast(wss, {
+          type: "agent:intent",
+          phase: "error",
+          error: error.message,
+          retryable: true,
+          heard: transcript.slice(0, 500),
+          timestamp: new Date().toISOString(),
+        });
         options.onAgentEvent?.({ type: "turn:error", transcript, error: error.message, timestamp: new Date().toISOString() });
       } finally {
         state.agentBusy = false;
@@ -184,7 +215,49 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   // Inspired by Mega-ASR's semantic recovery principle.
   state.smartSttEnabled = true;
   state.smartSttLog = { dropped: 0, lastReason: null, lastDropped: "" };
-  state.queueTranscript = (text) => {
+  // ---- salience gate (see docs/superpowers/specs/2026-09-01-gate-narrate-prune-design.md) ----
+  // Gated ("chaff") chunks buffer here and ride along as context on the next
+  // salient turn - the gate decides WHEN to draw, never what the agent knows.
+  state.pendingGateContext = [];
+  // Salience folded into the NEXT queued turn (max over its chunks), and the
+  // salience of the turn currently running (read by the message builder).
+  state.nextTurnSalience = null;
+  state.turnSalience = null;
+  // Serialize routing so chunks land in arrival order even when a later
+  // classification resolves before an earlier one.
+  let gateChain = Promise.resolve();
+  const GATE_CONTEXT_MAX_CHARS = 1500;
+  const GATE_SALIENCE = new Set(["chaff", "hypothesis", "decision"]);
+
+  function pushGateContext(text) {
+    state.pendingGateContext.push(text);
+    let total = state.pendingGateContext.reduce((n, t) => n + t.length, 0);
+    while (total > GATE_CONTEXT_MAX_CHARS && state.pendingGateContext.length > 1) {
+      total -= state.pendingGateContext.shift().length;
+    }
+  }
+
+  function flushGateContextInto(text) {
+    if (state.pendingGateContext.length === 0) return text;
+    const ctx = state.pendingGateContext.join(" ");
+    state.pendingGateContext = [];
+    return `(kept for context, not yet drawn: "${ctx}")\n${text}`;
+  }
+
+  function enqueueWithSalience(text, salience) {
+    if (salience) state.nextTurnSalience = maxSalience(state.nextTurnSalience, salience);
+    return queue.enqueue(flushGateContextInto(text));
+  }
+
+  function withGateTimeout(promise, ms) {
+    let timer = null;
+    return Promise.race([
+      promise,
+      new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); }),
+    ]).finally(() => clearTimeout(timer));
+  }
+
+  state.queueTranscript = (text, { bypassGate = false } = {}) => {
     if (!state.smartSttEnabled) return queue.enqueue(text);
     const reason = explainRejection(text);
     if (reason) {
@@ -196,14 +269,54 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     }
     const cleaned = cleanTranscript(text);
     if (!cleaned) return Promise.resolve();
-    return queue.enqueue(cleaned);
+    const classify = options?.classifySalience;
+    // No classifier -> legacy behaviour, byte for byte. Bypass -> the user
+    // typed it on purpose (typed turn, scoped edit, retry); gating it would be
+    // insubordinate. Trivial filler -> the queue's isReady gate handles it for
+    // free. Staging mode -> turns don't run anyway; don't burn a classify call.
+    if (!classify || bypassGate || state.mode !== "live" || isTrivialTranscript(cleaned)) {
+      return enqueueWithSalience(cleaned, classify && bypassGate ? "decision" : null);
+    }
+    const mySession = state.session;
+    const routed = gateChain.then(async () => {
+      // Fail-open default is "decision" (committed): a broken gate must never
+      // mute the product, and mistakenly-provisional content could later
+      // auto-expire - failing toward committed can only cost clutter.
+      let salience = "decision";
+      try {
+        const verdict = await withGateTimeout(
+          classify({
+            transcript: cleaned,
+            sessionIntent: state.agentInstructions ?? "",
+            recentContext: state.pendingGateContext.join(" "),
+          }),
+          options?.gateTimeoutMs ?? 1500,
+        );
+        if (verdict && GATE_SALIENCE.has(verdict.salience)) salience = verdict.salience;
+      } catch { /* fail open */ }
+      if (!mySession.active) return;
+      if (salience === "chaff") {
+        pushGateContext(cleaned);
+        broadcast(wss, {
+          type: "salience:noted",
+          text: cleaned.slice(0, 200),
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      return enqueueWithSalience(cleaned, salience);
+    });
+    gateChain = routed.catch(() => {});
+    return routed;
   };
   state.setSmartStt = (enabled) => {
     state.smartSttEnabled = !!enabled;
     broadcast(wss, { type: "stt:smart-mode", enabled: state.smartSttEnabled });
     return state.smartSttEnabled;
   };
-  state.idle = () => queue.idle();
+  // idle() drains gate routing first, then the turn queue - so callers (and
+  // tests) can await "everything queued so far has fully landed".
+  state.idle = () => gateChain.then(() => queue.idle());
   state.endSession = () => {
     state.session.active = false;
     state.session = { id: state.session.id + 1, active: true };
@@ -215,6 +328,10 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.interruptSignal = { aborted: false, reason: null };
     state.recentToolSignatures = [];
     state.pinnedIds = new Set();
+    state.pendingGateContext = [];
+    state.nextTurnSalience = null;
+    state.turnSalience = null;
+    state.candidates = new Map();
   };
   state.updateLatestScreenshot = (image) => {
     state.latestScreenshot = image;
@@ -314,6 +431,14 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   state.pinElement = (id) => {
     if (!id || typeof id !== "string") return false;
     state.pinnedIds.add(id);
+    // Pinning a candidate is the strongest confirmation there is.
+    if (state.candidates instanceof Map && state.candidates.has(id)) {
+      const res = promoteCandidates({ elements: state.elements, candidates: state.candidates, ids: [id] });
+      state.elements = res.elements;
+      state.candidates = res.candidates;
+      state.canvasDirtyForAgent = true;
+      broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+    }
     broadcast(wss, { type: "pin:changed", id, pinned: true, all: Array.from(state.pinnedIds) });
     return true;
   };
@@ -350,16 +475,6 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   };
   state.resetToolCallHistory = () => {
     state.recentToolSignatures = [];
-  };
-  // v0.7.0: agent declares its current canvas zone. Frontend shows it as a
-  // small floating chip on the canvas. Helps the user understand what region
-  // of the canvas the agent considers active for the current topic.
-  state.declareZone = (zone) => {
-    const allowed = new Set(["sketches", "structured", "notes"]);
-    const next = allowed.has(zone) ? zone : "structured";
-    state.activeZone = next;
-    broadcast(wss, { type: "agent:zone", zone: next, timestamp: new Date().toISOString() });
-    return next;
   };
   // Render a Mermaid diagram. The actual parsing + Excalidraw element creation
   // happens client-side (Mermaid runs in the browser via mermaid-to-excalidraw),

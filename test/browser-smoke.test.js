@@ -59,19 +59,23 @@ test("browser renders the app shell", async (t) => {
   });
 
   const tab = await waitForChromeTab(url);
-  const text = await waitForRenderedText(tab.webSocketDebuggerUrl, "Start listening");
+  const text = await waitForRenderedText(tab.webSocketDebuggerUrl, "Start whiteboarding");
 
-  assert.match(text, /Start listening/);
+  assert.match(text, /Start whiteboarding/);
 
-  // Page starts in the redesigned Setup screen: the setup rail renders the
-  // session intent, restore/settings entry points and the primary CTA.
-  const railButtons = await evaluateInTab(tab.webSocketDebuggerUrl, `Array.from(document.querySelectorAll(".setup-rail button")).map((button) => button.textContent.trim())`);
-  assert.ok(railButtons.some((label) => label.includes("Start listening")), `expected a Start listening button, got ${JSON.stringify(railButtons)}`);
-  assert.ok(railButtons.some((label) => label.includes("Restore last session")), `expected a Restore last session button, got ${JSON.stringify(railButtons)}`);
-  assert.ok(railButtons.some((label) => label.includes("Settings")), `expected a Settings button, got ${JSON.stringify(railButtons)}`);
-
-  const hasIntent = await evaluateInTab(tab.webSocketDebuggerUrl, `Boolean(document.querySelector(".setup-intent textarea"))`);
-  assert.ok(hasIntent, "expected the session-intent textarea to render");
+  // Page starts on the one-question Setup: a centered card carries the
+  // question, the intent input, template chips and the primary CTA; the strip
+  // carries brand + Options; restore is a quiet link under the button.
+  assert.match(text, /What are we working on\?/);
+  const cardButtons = await evaluateInTab(tab.webSocketDebuggerUrl, `Array.from(document.querySelectorAll(".sq-card button")).map((button) => button.textContent.trim())`);
+  assert.ok(cardButtons.some((label) => label.includes("Start whiteboarding")), `expected a Start whiteboarding button, got ${JSON.stringify(cardButtons)}`);
+  assert.ok(cardButtons.some((label) => label.includes("Restore last session")), `expected a Restore last session link, got ${JSON.stringify(cardButtons)}`);
+  const stripButtons = await evaluateInTab(tab.webSocketDebuggerUrl, `Array.from(document.querySelectorAll(".setup-strip button")).map((button) => button.textContent.trim())`);
+  assert.ok(stripButtons.some((label) => label.includes("Options")), `expected an Options button in the strip, got ${JSON.stringify(stripButtons)}`);
+  const hasIntent = await evaluateInTab(tab.webSocketDebuggerUrl, `Boolean(document.querySelector(".sq-input"))`);
+  assert.ok(hasIntent, "expected the one-line intent input to render");
+  const railGone = await evaluateInTab(tab.webSocketDebuggerUrl, `document.querySelector(".setup-rail") === null`);
+  assert.ok(railGone, "the 284px setup rail must be gone");
 });
 
 async function waitForChromeTab(url) {

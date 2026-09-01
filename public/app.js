@@ -23,6 +23,8 @@ import {
   sendTypedTurn as apiSendTypedTurn,
   askAgent as apiAskAgent,
   resetSession as apiResetSession,
+  sendPrunePreview as apiPrunePreview,
+  sendPrune as apiPrune,
 } from "./api-client.js";
 import { createWsClient } from "./ws-client.js";
 import { startMicCapture } from "./mic-capture.js";
@@ -147,6 +149,9 @@ function App() {
   // "Edit selected" bar can appear, and hold the typed instruction.
   const [selectedCount, setSelectedCount] = React.useState(0);
   const selectedIdsRef = React.useRef([]);
+  // Prune branch: with exactly one element selected in live mode, preview
+  // what pruning it would take (downstream shapes + arrows). null = no bar.
+  const [prunePreview, setPrunePreview] = React.useState(null);
   const [scopedEditText, setScopedEditText] = React.useState("");
   const [scopedEditSending, setScopedEditSending] = React.useState(false);
   // v0.15.0: typed turn ("type a point to add to the board").
@@ -206,22 +211,21 @@ function App() {
   // the server.
   const [uiPrefs, setUiPrefs] = React.useState({
     themePrimary: "#FF6B35",
-    backlogPosition: "below",
-    statusDensity: "expand",
     captionsOn: true,
-    captionMode: "presentation",
-    questionPos: "top",
     paletteRow: true,
-    toggleBreathe: true,
     onboarding: true,
     panelTheme: "dark",
   });
   const [uiDrawerOpen, setUiDrawerOpen] = React.useState(false);
   const [statusMiniOpen, setStatusMiniOpen] = React.useState(false);
   const uiPrefsSaveTimerRef = React.useRef(null);
-  // v0.7.0: agent-declared canvas zone (sketches/structured/notes). Updated
-  // via the agent:zone WS event when the agent calls declare_zone.
-  const [activeZone, setActiveZone] = React.useState("structured");
+  // Narration (agent:intent / salience:noted): the caption's single source of
+  // "what is it doing". nonce forces re-render on repeated identical messages.
+  const [narration, setNarration] = React.useState(null);
+  const narrationNonceRef = React.useRef(0);
+  // Undo is contextual: visible only in the window just after a turn drew.
+  const [undoAvailable, setUndoAvailable] = React.useState(false);
+  const undoWindowTimerRef = React.useRef(null);
   // v0.12.0: toast stack for ephemeral action feedback. Each toast auto-
   // dismisses after a few seconds. Cap at 4 visible to avoid stacking forever.
   const [toasts, setToasts] = React.useState([]);
@@ -249,7 +253,47 @@ function App() {
   }, [transcriptHistory]);
   // v0.12.0: agent thinking status text. Updated from agent tool start/end
   // events so the user can see what the agent is doing in real-time.
-  const [agentThinking, setAgentThinking] = React.useState("");
+  // Contextual prune preview: single selection in live mode -> ask the server
+  // what the branch under it holds. Debounced so drag-selection doesn't spam.
+  React.useEffect(() => {
+    if (phase !== "listening" && phase !== "paused") {
+      setPrunePreview(null);
+      return;
+    }
+    if (selectedCount !== 1) {
+      setPrunePreview(null);
+      return;
+    }
+    const elementId = selectedIdsRef.current[0];
+    if (!elementId) return;
+    const timer = setTimeout(() => {
+      apiPrunePreview(elementId)
+        .then((preview) => {
+          if (selectedIdsRef.current[0] === elementId) setPrunePreview(preview);
+        })
+        .catch(() => setPrunePreview(null));
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCount, phase]);
+
+  async function pruneSelectedBranch() {
+    const preview = prunePreview;
+    if (!preview?.elementId) return;
+    setPrunePreview(null);
+    try {
+      await apiPrune(preview.elementId);
+    } catch (err) {
+      showToast(`Prune failed: ${err.message}`, { variant: "warn" });
+    }
+  }
+
+  // Retry for a failed turn: resend what was heard as a typed turn (bypasses
+  // the salience gate - retrying is the user's explicit decision).
+  const retryTurn = React.useCallback((text) => {
+    const t = String(text ?? "").trim();
+    if (t) sendTypedTurn(t.slice(0, 2000));
+  }, []);
   // v0.13.0: re-skin Excalidraw appearance whenever panel theme flips
   useExcalidrawThemeSync(apiRef, uiPrefs.panelTheme);
   const [notesDragActive, setNotesDragActive] = React.useState(false);
@@ -922,7 +966,11 @@ function App() {
         if (message.type === "whiteboard:viewport")
           applyWhiteboardViewportCommand(message);
         if (message.type === "error") {
-          setError(message.message);
+          // Agent-turn failures are narrated by the caption error pill
+          // (agent:intent phase error, with Try Again) - a second red toast
+          // for the same failure is noise. Other errors still toast.
+          const isAgentTurnFailure = /whiteboard agent failed/i.test(message.message);
+          if (!isAgentTurnFailure) setError(message.message);
           if (/agent/i.test(message.message)) setAgentError(true);
           else setSttError(true);
         }
@@ -969,31 +1017,37 @@ function App() {
             setError(`Mermaid render failed: ${err.message}`);
           });
         }
-        if (message.type === "agent:zone") {
-          const z = message.zone;
-          if (z === "sketches" || z === "structured" || z === "notes") {
-            setActiveZone(z);
+        if (message.type === "agent:intent") {
+          narrationNonceRef.current += 1;
+          setNarration({ ...message, nonce: narrationNonceRef.current });
+          if (message.phase === "thinking") {
+            clearTimeout(undoWindowTimerRef.current);
+            setUndoAvailable(false);
+          }
+          if (message.phase === "idle" && message.noop === false) {
+            setUndoAvailable(true);
+            clearTimeout(undoWindowTimerRef.current);
+            undoWindowTimerRef.current = setTimeout(() => setUndoAvailable(false), 12000);
           }
         }
-        // v0.12.0: agent thinking status — tool:start fires when the agent
-        // begins executing a tool. Surface a friendly description.
-        if (message.type === "tool:start" || message.type === "agent:event") {
-          const toolName = message.tool || message.name;
-          if (toolName) {
-            const friendly = {
-              whiteboard_apply: "Editing the canvas",
-              whiteboard_overwrite: "Rebuilding the canvas",
-              render_mermaid: "Rendering Mermaid diagram",
-              ask_user_question: "Asking a clarifying question",
-              declare_zone: "Switching canvas zone",
-            }[toolName] || `Running ${toolName}`;
-            setAgentThinking(friendly);
-            setTimeout(() => setAgentThinking((cur) => cur === friendly ? "" : cur), 3500);
-          }
+        if (message.type === "salience:noted") {
+          narrationNonceRef.current += 1;
+          setNarration({ phase: "noted", text: message.text, nonce: narrationNonceRef.current });
         }
-        if (message.type === "agent:status" && message.status === "idle") {
-          setAgentThinking("");
+        if (message.type === "branch:pruned") {
+          const n = message.shapes ?? (Array.isArray(message.ids) ? message.ids.length : 0);
+          showToast(`Pruned ${n} shape${n === 1 ? "" : "s"} + ${message.arrows ?? 0} arrow${(message.arrows ?? 0) === 1 ? "" : "s"} — Undo is available`, { variant: "info" });
+          setUndoAvailable(true);
+          clearTimeout(undoWindowTimerRef.current);
+          undoWindowTimerRef.current = setTimeout(() => setUndoAvailable(false), 12000);
         }
+        if (message.type === "candidate:expired") {
+          const n = Array.isArray(message.ids) ? message.ids.length : 0;
+          if (n > 0) showToast(`Let go of ${n} unconfirmed sketch${n === 1 ? "" : "es"}`, { variant: "info" });
+        }
+        // Tool-status narration now rides on agent:intent (phase "drawing"
+        // carries the model's own intent text), so the per-tool friendly map
+        // and the strip status line are gone.
         // v0.12.0: surface useful WS-side events as toasts
         if (message.type === "agent:interrupted") {
           showToast("Agent interrupted", { variant: "warn" });
@@ -1382,8 +1436,9 @@ function App() {
             paused: phase === "paused",
             listening,
             agentStatus,
-            agentThinking,
-            activeZone,
+            narration,
+            undoAvailable,
+            onRetryTurn: retryTurn,
             cost,
             agentLabel: settings ? agentModelLabel(settings) : "Agent",
             transcriptionProvider: settings?.transcription?.provider ?? "moonshine",
@@ -1494,6 +1549,29 @@ function App() {
               { className: "se-count" },
               `✏️ ${selectedCount} selected`,
             ),
+            // Prune branch: single selection only; the server previewed what
+            // the branch under this element holds.
+            selectedCount === 1 && prunePreview && prunePreview.ok
+              ? React.createElement(
+                  React.Fragment,
+                  null,
+                  React.createElement(
+                    "span",
+                    { className: "se-prune-count" },
+                    `${prunePreview.shapes} shape${prunePreview.shapes === 1 ? "" : "s"} + ${prunePreview.arrows} arrow${prunePreview.arrows === 1 ? "" : "s"}`,
+                  ),
+                  React.createElement(
+                    "button",
+                    {
+                      className: "se-prune",
+                      type: "button",
+                      title: "Remove this element and everything downstream of it",
+                      onClick: pruneSelectedBranch,
+                    },
+                    "Prune branch",
+                  ),
+                )
+              : null,
             React.createElement("input", {
               className: "se-input",
               type: "text",

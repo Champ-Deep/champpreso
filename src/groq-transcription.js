@@ -25,7 +25,46 @@ const SAMPLE_RATE = 24000;
 
 // Mean absolute amplitude below which a frame counts as silence. PCM16 is
 // -32768..32767, so this is roughly -46 dBFS - quiet room, not dead air.
+// This is the BASE threshold; createNoiseFloorTracker scales it up in rooms
+// with steady background hum so silence detection keeps working there.
 const SILENCE_RMS = 180;
+// How many recent frame levels the noise tracker remembers (~6s at the
+// browser's ~100ms frames), which percentile counts as "ambient", how far
+// above ambient speech must rise, and a cap so a pathologically loud room
+// can never push the threshold beyond real speech levels.
+const NOISE_WINDOW_FRAMES = 60;
+const NOISE_PERCENTILE = 0.1;
+const NOISE_MULTIPLIER = 2.5;
+const NOISE_THRESHOLD_CAP = 4000;
+
+/**
+ * Rolling ambient-noise estimator. update(level) returns the silence
+ * threshold to use for that frame: the base threshold in quiet rooms, or a
+ * multiple of the learned ambient floor in humming ones. The floor is a low
+ * percentile of recent levels, so speech bursts (a minority of frames across
+ * the window) cannot drag it up, and the cap keeps even continuous loud
+ * audio classifiable.
+ */
+export function createNoiseFloorTracker({
+  base = SILENCE_RMS,
+  windowSize = NOISE_WINDOW_FRAMES,
+  percentile = NOISE_PERCENTILE,
+  multiplier = NOISE_MULTIPLIER,
+  cap = NOISE_THRESHOLD_CAP,
+} = {}) {
+  /** @type {number[]} */
+  const levels = [];
+  return {
+    /** @param {number} level */
+    update(level) {
+      levels.push(level);
+      if (levels.length > windowSize) levels.shift();
+      const sorted = [...levels].sort((a, b) => a - b);
+      const floor = sorted[Math.floor(sorted.length * percentile)] ?? 0;
+      return Math.min(cap, Math.max(base, floor * multiplier));
+    },
+  };
+}
 // Trailing quiet needed before we treat the utterance as finished. Short
 // enough to feel responsive, long enough not to cut mid-sentence.
 const SILENCE_HOLD_MS = 600;
@@ -69,6 +108,8 @@ export function createGroqTranscription({
   let sawSpeech = false;
   // Serializes in-flight posts so turns reach the queue in spoken order.
   let pending = Promise.resolve();
+  // Learns the room's ambient level so background hum reads as silence.
+  const noiseFloor = createNoiseFloorTracker();
 
   function resolveApiKey() {
     const key = (options.groqApiKey ?? env.GROQ_API_KEY ?? "").trim();
@@ -170,7 +211,8 @@ export function createGroqTranscription({
       if (pcm.length === 0) return;
 
       const frameMs = (pcm.length / 2 / SAMPLE_RATE) * 1000;
-      const loud = meanAmplitude(pcm) >= SILENCE_RMS;
+      const level = meanAmplitude(pcm);
+      const loud = level >= noiseFloor.update(level);
 
       // Drop leading silence so an utterance starts at the first real sound.
       if (!sawSpeech && !loud) return;

@@ -18,12 +18,19 @@ export const DEFAULT_SETTINGS = Object.freeze({
   },
   transcription: {
     provider: "moonshine",
+    // User glossary: names and product terms (comma- or newline-separated)
+    // fed to every STT provider's vocabulary biasing. Config, not session
+    // content - it survives resets, unlike staging-derived keywords.
+    glossary: "",
     moonshine: { model: "medium" },
     openai: { model: "gpt-realtime-whisper" },
     // v0.11.0: Groq Whisper Large v3 Turbo. OpenAI-compatible /audio/transcriptions
     // endpoint. 14,400 free minutes per day. Strong on noisy real-life audio
     // because Whisper Large v3 is the SOTA Whisper variant.
     groq: { model: "whisper-large-v3-turbo", baseURL: "https://api.groq.com/openai/v1" },
+    // Deepgram Nova-3 streaming: sub-300ms finals, interim results (live
+    // captions while you speak), keyterm prompting from the glossary.
+    deepgram: { model: "nova-3" },
   },
   // The ASK agent: a separate, more thoughtful model that answers questions
   // about the board instead of drawing on it. Deliberately independent of
@@ -49,11 +56,18 @@ export const DEFAULT_SETTINGS = Object.freeze({
     mcpServers: [],
     maxIndexChars: 2_000_000,
   },
+  // Salience gate: a fast Groq classifier that decides WHEN a transcript
+  // chunk fires a drawing turn (chaff buffers as context instead of drawing).
+  // Fail-open by design; requires apiKeys.groq to actually engage.
+  gate: {
+    enabled: true,
+  },
   apiKeys: {
     openai: "",
     openrouter: "",
     groq: "",
     cerebras: "",
+    deepgram: "",
   },
   agentInstructions: "",
   // Notes and transcripts. Free-form reference material the user drops into
@@ -81,32 +95,18 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // Champ Suite Ember by default. Switch to #F26722 (Champions Group parent)
     // or any of the world hues in the dropdown.
     themePrimary: "#FF6B35",
-    // Backlog Pill placement relative to Pause Capture button.
-    backlogPosition: "below", // "above" | "below"
-    // Status Card density in PRESO. "expand" keeps all three rows; "collapse"
-    // shrinks to a single line, click-to-expand.
-    statusDensity: "expand", // "expand" | "collapse"
-    // Live captions on/off and visual variant.
+    // Live captions on/off.
     captionsOn: true,
-    captionMode: "presentation", // "presentation" | "working"
-    // Floating Question Card anchor edge.
-    questionPos: "top", // "top" | "bottom"
     // Canvas palette swatch row on/off. The active palette itself is just
     // themePrimary (above) - one accent color field, not a separate one.
     paletteRow: true,
-    // Mode toggle breathing underline micro-interaction.
-    toggleBreathe: true,
     // First-launch onboarding ribbon. User dismisses; persists as false.
     onboarding: true,
     // Dark panel vs light panel. Aegis defaults to dark.
     panelTheme: "dark", // "dark" | "light"
-    // Provider fallback chain. When the primary provider errors or times out,
-    // the server tries the next in this list. Empty entries are skipped.
-    providerFallback: ["groq", "openrouter", "openai", "ollama"],
-    // Agent timeout per turn (ms). Lower than v0.6's 90s to fail fast.
+    // Agent timeout per turn (ms). Honoured by runWhiteboardAgent; the old
+    // 30s value shipped unwired while the code hardcoded 90s.
     agentTimeoutMs: 30000,
-    // Number of retries on a timed-out or failed turn before giving up.
-    agentMaxRetries: 1,
   },
 });
 
@@ -161,6 +161,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
       hasOpenRouterKey: Boolean(apiKeys?.openrouter),
       hasGroqKey: Boolean(apiKeys?.groq),
       hasCerebrasKey: Boolean(apiKeys?.cerebras),
+      hasDeepgramKey: Boolean(apiKeys?.deepgram),
     };
   }
 
@@ -194,6 +195,9 @@ function seedFromEnv(settings, env, readCodexAuth) {
 
   const groqKey = trimOrEmpty(env.GROQ_API_KEY);
   if (groqKey) next.apiKeys.groq = groqKey;
+
+  const deepgramKey = trimOrEmpty(env.DEEPGRAM_API_KEY);
+  if (deepgramKey) next.apiKeys.deepgram = deepgramKey;
   const groqModel = trimOrEmpty(env.GROQ_MODEL);
   if (groqModel) next.agent.groq.model = groqModel;
 
@@ -241,7 +245,10 @@ function seedFromEnv(settings, env, readCodexAuth) {
   else if (ollamaModel) next.agent.provider = "ollama";
   else next.agent.provider = "openai";
 
-  if (openaiKey) next.transcription.provider = "openai";
+  // First-run STT preference: Deepgram streaming when a key is present
+  // (best latency + live captions), else OpenAI Realtime, else Moonshine.
+  if (deepgramKey) next.transcription.provider = "deepgram";
+  else if (openaiKey) next.transcription.provider = "openai";
 
   return next;
 }

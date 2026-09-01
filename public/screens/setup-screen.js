@@ -5,7 +5,7 @@
 // This replaces the old staging-mode side panel: the session-intent textarea,
 // the multiple-speakers toggle, restore-last-session, a single scrollable
 // settings sheet (agent / transcription / mic / appearance), a canvas seed
-// affordance, the readiness glyph, and the "Start listening" button.
+// affordance, the readiness glyph, and the "Start whiteboarding" button.
 //
 // It owns only local UI state (sheet open/closed, restore feedback, seed
 // disclosure, optimistic mirrors of a few settings). Anything that must leave
@@ -33,6 +33,7 @@ import {
   OPENAI_TRANSCRIPTION_MODELS,
   MOONSHINE_MODELS,
   GROQ_TRANSCRIPTION_MODELS,
+  DEEPGRAM_TRANSCRIPTION_MODELS,
   ASK_MODELS,
   REASONING_EFFORTS,
 } from "../model-catalog.js";
@@ -133,6 +134,8 @@ function currentSttModel(settings, provider) {
     return t.openai?.model || OPENAI_TRANSCRIPTION_MODELS[0];
   if (provider === "groq")
     return t.groq?.model || GROQ_TRANSCRIPTION_MODELS[0];
+  if (provider === "deepgram")
+    return t.deepgram?.model || DEEPGRAM_TRANSCRIPTION_MODELS[0];
   return t.moonshine?.model || "medium";
 }
 
@@ -211,7 +214,9 @@ export function SetupScreen({
       ? "LOCAL TRANSCRIPTION"
       : sttProvider === "groq"
         ? "GROQ LPU TRANSCRIPTION"
-        : "CLOUD TRANSCRIPTION";
+        : sttProvider === "deepgram"
+          ? "DEEPGRAM STREAMING"
+          : "CLOUD TRANSCRIPTION";
   const readyText = warming
     ? `RE-WARMING · STILL FINE TO START · ${micLabel}`
     : `AGENT WARM · ${micLabel} · ${sttReadyLabel}`;
@@ -245,7 +250,9 @@ export function SetupScreen({
         ? "medium"
         : nextProvider === "groq"
           ? GROQ_TRANSCRIPTION_MODELS[0]
-          : OPENAI_TRANSCRIPTION_MODELS[0];
+          : nextProvider === "deepgram"
+            ? DEEPGRAM_TRANSCRIPTION_MODELS[0]
+            : OPENAI_TRANSCRIPTION_MODELS[0];
     onSaveSettings({
       transcription: { provider: nextProvider, [nextProvider]: { model: nextModel } },
     });
@@ -306,16 +313,6 @@ export function SetupScreen({
     api.updateScene({ elements: [...kept, ...skeleton] });
     try {
       api.scrollToContent?.(skeleton, { fitToViewport: true, viewportZoomFactor: 0.75 });
-      // scrollToContent centers on the full window, but the setup rail covers
-      // the left ~284px - shift the content right by half the rail so it
-      // centers within the visible canvas area instead (same correction the
-      // .setup-canvas-hint CSS makes). Deferred so the fit commits first.
-      setTimeout(() => {
-        const appState = api.getAppState?.();
-        if (!appState) return;
-        const zoom = appState.zoom?.value ?? 1;
-        api.updateScene({ appState: { scrollX: appState.scrollX + 142 / zoom } });
-      }, 60);
     } catch {
       /* older Excalidraw builds without scrollToContent options: non-fatal */
     }
@@ -335,157 +332,114 @@ export function SetupScreen({
   return h(
     React.Fragment,
     null,
-    // Empty-canvas hint (design showCanvasHint). Non-interactive overlay.
-    canvasEmpty
-      ? h(
-          "div",
-          { className: "setup-canvas-hint", "aria-hidden": "true" },
-          h("div", { className: "sch-lead" }, "Draw or paste what you have so far"),
-          h(
-            "div",
-            { className: "sch-sub" },
-            "Whatever is on this canvas when you start becomes the agent's starting state. Blank is fine too.",
-          ),
-        )
-      : null,
 
-    // ============ SETUP RAIL ============
+    // ============ TOP STRIP (mirrors the live Whiteboarding strip) ============
     h(
       "div",
-      { className: "setup-rail" },
+      { className: "setup-strip" },
       h(
         "div",
         { className: "setup-brand" },
         "Champ",
         h("span", { className: "setup-brand-mark" }, "Preso"),
       ),
-      h("div", { className: "setup-eyebrow" }, "NEW SESSION"),
+      h("div", { className: "setup-strip-spacer" }),
+      h(
+        "button",
+        {
+          type: "button",
+          className: "setup-options-btn",
+          onClick: () => setSettingsOpen(true),
+          title: "Everything else: agent, transcription, mic, seeding, appearance",
+        },
+        settingsIcon(),
+        "Options",
+      ),
+    ),
 
+    // ============ THE ONE QUESTION ============
+    // Centered while the canvas is empty; docks to the bottom edge once the
+    // canvas has content so nothing covers the user's drawing. Everything the
+    // old 39-control rail held still exists - it lives behind Options.
+    h(
+      "div",
+      { className: `sq-card${canvasEmpty ? "" : " sq-docked"}` },
+      h("div", { className: "sq-title" }, "What are we working on?"),
+      h("input", {
+        className: "sq-input",
+        type: "text",
+        value: agentInstructions ?? "",
+        onChange: (e) => onAgentInstructionsChange?.(e.target.value),
+        placeholder: "Say it in a line — or pick a start below",
+        spellCheck: true,
+        "aria-label": "What are we working on?",
+      }),
       h(
         "div",
-        { className: "setup-intent" },
-        h("label", { htmlFor: "setup-intent-input" }, "Where should this conversation land?"),
-        h("textarea", {
-          id: "setup-intent-input",
-          value: agentInstructions ?? "",
-          onChange: (e) => onAgentInstructionsChange?.(e.target.value),
-          placeholder: "Get to a concrete Q3 plan for Lake Stream",
-          spellCheck: true,
-        }),
-        h(
-          "div",
-          { className: "setup-intent-hint" },
-          "The intent steers what gets drawn. A goal converges the canvas. A question maps it.",
-        ),
-        h(
-          "div",
-          { className: "setup-templates-label" },
-          "OR START FROM A TEMPLATE",
-        ),
-        h(
-          "div",
-          { className: "setup-intent-templates" },
-          BRAINSTORM_TEMPLATES.map((template) =>
-            h(
-              "button",
-              {
-                key: template.id,
-                type: "button",
-                className: `setup-intent-template${activeTemplateId === template.id ? " active" : ""}`,
-                title: template.tagline,
-                onClick: () => applyTemplate(template),
-              },
-              template.label,
-            ),
+        { className: "sq-chips" },
+        BRAINSTORM_TEMPLATES.map((template) =>
+          h(
+            "button",
+            {
+              key: template.id,
+              type: "button",
+              className: `sq-chip${activeTemplateId === template.id ? " active" : ""}`,
+              title: template.tagline,
+              onClick: () => applyTemplate(template),
+            },
+            template.label,
           ),
-          agentInstructions || activeTemplateId
-            ? h(
-                "button",
-                {
-                  type: "button",
-                  className: "setup-intent-template setup-intent-template-clear",
-                  onClick: clearTemplate,
-                },
-                "Clear",
-              )
-            : null,
         ),
+        agentInstructions || activeTemplateId
+          ? h(
+              "button",
+              { type: "button", className: "sq-chip sq-chip-clear", onClick: clearTemplate },
+              "Clear",
+            )
+          : null,
       ),
-
       h(
-        "label",
-        { className: "setup-check" },
-        h("input", {
-          type: "checkbox",
-          checked: multiSpeaker,
-          onChange: toggleMulti,
-        }),
-        "Multiple speakers",
+        "button",
+        {
+          type: "button",
+          className: "setup-start sq-start",
+          onClick: startListening,
+          disabled: starting,
+        },
+        starting ? "Starting…" : "Start whiteboarding",
       ),
-
+      readinessGlyph("sq-ready"),
       h(
         "div",
-        { className: "setup-restore-group" },
+        { className: "sq-restore" },
         h(
           "button",
           {
             type: "button",
-            className: "setup-ghost-btn",
+            className: "sq-restore-btn",
             onClick: restoreSession,
             disabled: restoring,
           },
-          restoreIcon(),
           restoring ? "Restoring…" : "Restore last session",
         ),
-        // Always rendered (space reserved via CSS min-height even when
-        // empty) rather than only mounted once there's text - a
-        // conditionally-mounted sibling here pushed the Settings button
-        // (and everything after it) down every time a restore result
-        // appeared, which read as the whole rail "glitching" on restore.
-        h(
-          "div",
-          {
-            className: `setup-restored${restoredText ? " visible" : ""}${/failed|no saved/i.test(restoredText) ? " err" : ""}`,
-          },
-          restoredText,
-        ),
+        restoredText
+          ? h(
+              "span",
+              { className: `sq-restored${/failed|no saved/i.test(restoredText) ? " err" : ""}` },
+              restoredText,
+            )
+          : null,
       ),
-
-      h(
-        "button",
-        {
-          type: "button",
-          className: "setup-ghost-btn",
-          onClick: () => setSettingsOpen(true),
-        },
-        settingsIcon(),
-        h(
-          "span",
-          { className: "setup-ghost-btn-text" },
-          h("span", { className: "setup-ghost-btn-title" }, "Settings"),
-          h("span", { className: "setup-ghost-btn-sub" }, "Agent, transcription, mic"),
-        ),
-      ),
-
-      h("div", { className: "setup-spacer" }),
-
-      h(SeedArea, { excalidrawApi }),
-
-      h(
-        "button",
-        {
-          type: "button",
-          className: "setup-start",
-          onClick: startListening,
-          disabled: starting,
-        },
-        starting ? "Starting…" : "Start listening",
-      ),
-
-      readinessGlyph(),
+      canvasEmpty
+        ? h(
+            "div",
+            { className: "sq-hint" },
+            "Or draw straight on the canvas — whatever is there when you start becomes the agent's starting state.",
+          )
+        : null,
     ),
 
-    // ============ SETTINGS SHEET ============
+    // ============ OPTIONS (settings sheet) ============
     settingsOpen
       ? h(SettingsSheet, {
           settings,
@@ -503,6 +457,11 @@ export function SetupScreen({
           onSaveSttModel: saveSttModel,
           onPatchUiPref,
           readiness: readinessGlyph("in-sheet"),
+          excalidrawApi,
+          agentInstructions,
+          onAgentInstructionsChange,
+          multiSpeaker,
+          onToggleMulti: toggleMulti,
           onClose: () => setSettingsOpen(false),
         })
       : null,
@@ -591,6 +550,11 @@ function SeedArea({ excalidrawApi }) {
 // ---- Settings sheet -----------------------------------------------------
 function SettingsSheet({
   settings,
+  excalidrawApi,
+  agentInstructions,
+  onAgentInstructionsChange,
+  multiSpeaker,
+  onToggleMulti,
   agentProvider,
   agentModel,
   sttProvider,
@@ -664,13 +628,26 @@ function SettingsSheet({
       ? MOONSHINE_MODELS
       : sttProvider === "groq"
         ? GROQ_TRANSCRIPTION_MODELS
-        : OPENAI_TRANSCRIPTION_MODELS;
+        : sttProvider === "deepgram"
+          ? DEEPGRAM_TRANSCRIPTION_MODELS
+          : OPENAI_TRANSCRIPTION_MODELS;
   const sttHelp =
     sttProvider === "moonshine"
       ? "Runs on this Mac. Free. Names come out mediocre."
       : sttProvider === "groq"
         ? "Whisper on Groq's LPU silicon. Fastest option here, and free for 14,400 minutes a day."
-        : "Cloud, low latency, nails names. Costs money per minute.";
+        : sttProvider === "deepgram"
+          ? "Streaming: captions appear while you speak, and the glossary biases names. ~$0.46/hr."
+          : "Cloud, low latency, nails names. Costs money per minute.";
+  const [deepgramKey, setDeepgramKey] = React.useState("");
+  // Three questions by default; everything else one disclosure down.
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  function commitDeepgramKey() {
+    const value = deepgramKey.trim();
+    if (!value) return;
+    onSaveSettings({ apiKeys: { deepgram: value } });
+    setDeepgramKey("");
+  }
 
   return h(
     React.Fragment,
@@ -699,6 +676,108 @@ function SettingsSheet({
       h(
         "div",
         { className: "ss-body" },
+
+        // ---- THE THREE QUESTIONS ----
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-q" }, "How should it listen?"),
+          h(
+            "select",
+            {
+              className: "ss-select",
+              value: sttProvider,
+              onChange: (e) => onSaveSttProvider(e.target.value),
+              "aria-label": "How should it listen?",
+            },
+            h("option", { value: "moonshine" }, "Local · private, free, on this Mac"),
+            h("option", { value: "groq" }, "Groq LPU · fastest, free tier"),
+            h("option", { value: "deepgram" }, "Deepgram · streaming, captions as you speak"),
+            h("option", { value: "openai" }, "OpenAI · realtime, accurate"),
+          ),
+          h("div", { className: "ss-help" }, sttHelp),
+        ),
+
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-q" }, "How should it draw?"),
+          h(ModelCombobox, {
+            provider: agentProvider,
+            value: agentModel,
+            onCommit: (model) => onSaveAgentModel(model),
+          }),
+          h(
+            "div",
+            { className: "ss-help" },
+            `A fast model, because drawing happens while you are still talking. Provider: ${agentProvider} (change under Advanced).`,
+          ),
+        ),
+
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-q" }, "How should it answer?"),
+          h(ModelCombobox, {
+            provider: "openrouter",
+            value: askModel,
+            onCommit: (model) => onSaveSettings({ ask: { provider: "openrouter", model } }),
+          }),
+          h(
+            "div",
+            { className: "ss-help" },
+            `A stronger model for questions about the board. Web search ${askWebSearch ? "on" : "off"}.`,
+          ),
+        ),
+
+        h(
+          "button",
+          {
+            type: "button",
+            className: "ss-advanced-toggle",
+            onClick: () => setAdvancedOpen((v) => !v),
+            "aria-expanded": advancedOpen,
+          },
+          h("span", null, "Advanced"),
+          h("span", { className: "ss-advanced-count" }, advancedOpen ? "hide ‹" : "more settings ›"),
+        ),
+
+        ...(advancedOpen ? [
+
+        // ---- SESSION ----
+        // Migrated from the old setup rail: the one-line question on the card
+        // is the short form; this is the long form plus session toggles.
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-group-label" }, "SESSION"),
+          ssField(
+            "Agent instructions",
+            h("textarea", {
+              className: "ss-select ss-textarea",
+              value: agentInstructions ?? "",
+              onChange: (e) => onAgentInstructionsChange?.(e.target.value),
+              placeholder: "Longer-form direction for the whole session…",
+              spellCheck: true,
+            }),
+          ),
+          ssField(
+            "Multiple speakers",
+            h(
+              "label",
+              { className: "ss-check" },
+              h("input", {
+                type: "checkbox",
+                checked: Boolean(multiSpeaker),
+                onChange: onToggleMulti,
+              }),
+              h("span", null, multiSpeaker ? "On" : "Off"),
+            ),
+          ),
+          h(SeedArea, { excalidrawApi }),
+        ),
+
+        h("div", { className: "ss-divider" }),
 
         // ---- AGENT ----
         h(
@@ -816,6 +895,7 @@ function SettingsSheet({
             { className: "ss-seg" },
             sttSegButton("Local", "free", sttProvider === "moonshine", () => onSaveSttProvider("moonshine")),
             sttSegButton("Groq LPU", "fastest", sttProvider === "groq", () => onSaveSttProvider("groq")),
+            sttSegButton("Deepgram", "streaming", sttProvider === "deepgram", () => onSaveSttProvider("deepgram")),
             sttSegButton("OpenAI", "accurate", sttProvider === "openai", () => onSaveSttProvider("openai")),
           ),
           ssField(
@@ -830,6 +910,25 @@ function SettingsSheet({
               ensureOption(sttModelOptions, sttModel).map((m) => h("option", { key: m, value: m }, m)),
             ),
           ),
+          sttProvider === "deepgram"
+            ? ssField(
+                "API key",
+                h("input", {
+                  className: "ss-select",
+                  type: "password",
+                  value: deepgramKey,
+                  placeholder: settings?.hasDeepgramKey ? "configured (enter to replace)" : "dg_...",
+                  onChange: (e) => setDeepgramKey(e.target.value),
+                  onBlur: commitDeepgramKey,
+                  onKeyDown: (e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitDeepgramKey();
+                    }
+                  },
+                }),
+              )
+            : null,
           h("div", { className: "ss-help" }, sttHelp),
         ),
 
@@ -955,6 +1054,8 @@ function SettingsSheet({
             "Live captions on by default",
           ),
         ),
+
+        ] : []),
       ),
 
       readiness,

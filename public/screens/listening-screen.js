@@ -17,8 +17,10 @@
 //   listening       bool    — mic is actively capturing (drives the strip
 //                             waveform; false while paused)
 //   agentStatus     string  — raw agent:status ("idle" | "thinking" | ...)
-//   agentThinking   string  — friendly tool-status text (agent:event/tool:start)
-//   activeZone      string  — agent:zone ("sketches" | "structured" | "notes")
+//   narration       object  — latest agent:intent / salience:noted message
+//                             (drives the caption narration; nonce-bumped)
+//   undoAvailable   bool    — true in the window just after a turn drew
+//   onRetryTurn(text)        — resend a failed turn's transcript as typed
 //   cost            object  — { agent, transcription } from the cost WS message
 //   agentLabel      string  — agent model label for the status drawer
 //   transcriptionProvider string — "moonshine" | "openai" (drawer line)
@@ -52,12 +54,6 @@ import { sendNudge as apiSendNudge } from "../api-client.js";
 
 const h = React.createElement;
 
-const ZONE_LABELS = {
-  sketches: "SKETCHES",
-  structured: "STRUCTURED",
-  notes: "NOTES",
-};
-
 // 5 rotating example steers, cycled every 4s (design placeholderIdx timer).
 const STEER_PLACEHOLDERS = [
   "Whisper a steer… “group these by owner”",
@@ -73,15 +69,6 @@ function formatUsd(value) {
   if (typeof value !== "number" || !isFinite(value) || value === 0) return "$0.00";
   if (value < 0.01) return `$${value.toFixed(4)}`;
   return `$${value.toFixed(2)}`;
-}
-
-// Small status text under the state label. Real agent status, not the mock's
-// scripted sequence.
-function deriveStatusText({ paused, agentStatus, agentThinking }) {
-  if (paused) return "holding";
-  if (agentThinking) return String(agentThinking).toLowerCase();
-  if (agentStatus === "thinking") return "thinking";
-  return "listening";
 }
 
 function svg(children, size = 12, strokeWidth = 1.5) {
@@ -121,6 +108,21 @@ const sendIcon = (size = 14) =>
 const checkIcon = (size = 13) =>
   svg([h("path", { key: "a", d: "M20 6 9 17l-5-5" })], size, 2);
 
+// Mic-off glyph for the icon-only Pause control.
+const micOffIcon = (size = 13) =>
+  svg(
+    [
+      h("line", { key: "x1", x1: 2, y1: 2, x2: 22, y2: 22 }),
+      h("path", { key: "a", d: "M18.89 13.23A7.12 7.12 0 0 0 19 12v-2" }),
+      h("path", { key: "b", d: "M5 10v2a7 7 0 0 0 12 5" }),
+      h("path", { key: "c", d: "M15 9.34V5a3 3 0 0 0-5.68-1.33" }),
+      h("path", { key: "d", d: "M9 9v3a3 3 0 0 0 5.12 2.12" }),
+      h("line", { key: "v", x1: 12, y1: 19, x2: 12, y2: 22 }),
+    ],
+    size,
+    1.6,
+  );
+
 // Interrupt = a filled-ish stop square (rounded), matching the strip's line icons.
 const stopIcon = (size = 12) =>
   svg([h("rect", { key: "a", x: 6, y: 6, width: 12, height: 12, rx: 2 })], size, 2);
@@ -140,8 +142,9 @@ export function ListeningScreen({
   paused = false,
   listening = false,
   agentStatus = "idle",
-  agentThinking = "",
-  activeZone = "structured",
+  narration = null,
+  undoAvailable = false,
+  onRetryTurn,
   cost = null,
   agentLabel = "Agent",
   transcriptionProvider = "moonshine",
@@ -199,6 +202,26 @@ export function ListeningScreen({
     captionTimerRef.current = setTimeout(() => setVisibleCaption(""), 4500);
   }, [captionText]);
   React.useEffect(() => () => clearTimeout(captionTimerRef.current), []);
+
+  // ---- caption narration: agent:intent / salience:noted drive the pill ----
+  // error is sticky (needs the Try again affordance); drawing/noted/no-op fade
+  // on a timer; idle-after-drawing clears back to plain transcript captions.
+  const [narView, setNarView] = React.useState(null);
+  const narTimerRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!narration || !narration.phase) return;
+    clearTimeout(narTimerRef.current);
+    if (narration.phase === "idle" && !narration.noop) {
+      setNarView(null); // drew successfully - captions take back over
+      return;
+    }
+    setNarView(narration);
+    if (narration.phase === "drawing" || narration.phase === "noted" || (narration.phase === "idle" && narration.noop)) {
+      narTimerRef.current = setTimeout(() => setNarView(null), 4500);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narration?.nonce]);
+  React.useEffect(() => () => clearTimeout(narTimerRef.current), []);
 
   // ---- status drawer ----
   const [drawerOpen, setDrawerOpen] = React.useState(false);
@@ -294,16 +317,13 @@ export function ListeningScreen({
   }, [question, onSkipQuestion]);
 
   // ---- derived display values ----
-  const stateLabel = paused ? "Paused" : "Listening";
+  const stateLabel = paused ? "Paused" : "Whiteboarding";
   const stateDotColor = paused ? "var(--champ-mist)" : "var(--champ-ember)";
   const stateDotAnim = paused ? "none" : "ppPulse 2s ease-in-out infinite";
   const stateDotGlow = paused ? "none" : "0 0 12px rgba(255,107,53,0.6)";
   const mm = Math.floor(clock / 60);
   const ss = String(clock % 60).padStart(2, "0");
   const clockText = `${mm}:${ss}`;
-  const statusText = deriveStatusText({ paused, agentStatus, agentThinking });
-  const zoneText = ZONE_LABELS[activeZone] || "";
-
   const agent = cost?.agent ?? {};
   const stt = cost?.transcription ?? {};
   const agentCost = agent.priced ? agent.cost ?? 0 : 0;
@@ -344,21 +364,6 @@ export function ListeningScreen({
         h("span", { className: "ls-clock" }, clockText),
       ),
 
-      isListening
-        ? h(
-            "div",
-            { className: "ls-wave", "aria-hidden": "true" },
-            h("span", { style: { animation: "ppWave1 .9s ease-in-out infinite" } }),
-            h("span", { style: { animation: "ppWave2 .8s ease-in-out infinite" } }),
-            h("span", { style: { animation: "ppWave3 1s ease-in-out infinite" } }),
-            h("span", { style: { animation: "ppWave2 .85s ease-in-out infinite" } }),
-          )
-        : null,
-
-      h("span", { className: "ls-status-text" }, statusText),
-
-      zoneText ? h("span", { className: "ls-zone" }, zoneText) : null,
-
       h("div", { className: "ls-strip-spacer" }),
 
       paused
@@ -376,19 +381,23 @@ export function ListeningScreen({
             "button",
             {
               type: "button",
-              className: stripBtn,
+              className: `${stripBtn} ls-strip-iconbtn`,
               onClick: onPauseResume,
-              title: "Mic off, agent holds",
+              title: "Pause the mic - the agent holds",
+              "aria-label": "Pause the mic",
             },
-            "Pause",
+            micOffIcon(),
           ),
 
-      h(
-        "button",
-        { type: "button", className: stripBtn, onClick: onUndo, title: "Undo what it just drew" },
-        undoIcon(),
-        "Undo",
-      ),
+      // Contextual: only in the window just after a turn drew something.
+      undoAvailable
+        ? h(
+            "button",
+            { type: "button", className: stripBtn, onClick: onUndo, title: "Undo what it just drew" },
+            undoIcon(),
+            "Undo",
+          )
+        : null,
 
       // Only surfaced while the agent is mid-turn — interrupting an idle agent
       // is a no-op. Shares the ghost strip-button style with Undo/End.
@@ -402,7 +411,7 @@ export function ListeningScreen({
               title: "Stop the agent mid-turn",
             },
             stopIcon(),
-            "Interrupt",
+            "Stop",
           )
         : null,
 
@@ -507,8 +516,61 @@ export function ListeningScreen({
         })
       : null,
 
-    // ============ CAPTION PILL ============
-    captionShown ? h("div", { className: "ls-caption" }, visibleCaption) : null,
+    // ============ CAPTION PILL - the single narration surface ============
+    // error > drawing/thinking/noted/no-op > plain transcript caption.
+    // (capClass lifts the pill clear of the typed-turn row when that's open.)
+    narView && narView.phase === "error"
+      ? h(
+          "div",
+          { className: `ls-caption ls-caption--error${typedOpen ? " ls-caption--lifted" : ""}` },
+          h("span", null, `Couldn't draw that — ${String(narView.error || "something went wrong").slice(0, 120)}. Nothing was lost.`),
+          narView.retryable && narView.heard
+            ? h(
+                "button",
+                {
+                  type: "button",
+                  className: "ls-caption-retry",
+                  onClick: () => {
+                    onRetryTurn?.(narView.heard);
+                    setNarView(null);
+                  },
+                },
+                "Try again",
+              )
+            : null,
+        )
+      : narView && narView.phase === "drawing"
+        ? h(
+            "div",
+            { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` },
+            narView.heard ? h("span", { className: "ls-caption-heard" }, `“${narView.heard.slice(0, 60)}”`) : null,
+            h("span", { className: "ls-caption-arrow" }, "→"),
+            h("span", null, narView.intent || "drawing"),
+          )
+        : narView && narView.phase === "thinking"
+          ? h(
+              "div",
+              { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` },
+              narView.heard ? h("span", { className: "ls-caption-heard" }, `“${narView.heard.slice(0, 60)}”`) : null,
+              h("span", { className: "ls-caption-arrow" }, "→"),
+              h("span", { className: "ls-caption-heard" }, "thinking…"),
+            )
+          : narView && narView.phase === "noted"
+            ? h(
+                "div",
+                { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` },
+                h("span", { className: "ls-caption-heard" }, `“${String(narView.text || "").slice(0, 70)}”`),
+                h("span", { className: "ls-caption-tag" }, "noted"),
+              )
+            : narView && narView.phase === "idle" && narView.noop
+              ? h(
+                  "div",
+                  { className: `ls-caption ls-caption--noop${typedOpen ? " ls-caption--lifted" : ""}` },
+                  "Listening — nothing worth drawing yet",
+                )
+              : captionShown
+                ? h("div", { className: `ls-caption${typedOpen ? " ls-caption--lifted" : ""}` }, visibleCaption)
+                : null,
 
     // ============ STEER BAR ============
     h(
