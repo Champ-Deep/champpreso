@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; }
+    a { color: #FF6B35; } a:hover { color: #FF8C5A; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1440px; height: 900px; background: #F4F4F0; background-image: radial-gradient(circle, #ECEAE4 1px, transparent 1px); background-size: 26px 26px; overflow: hidden;">
+
+  <!-- ============ TOP STRIP · state flips to Drawing ============ -->
+  <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; background: rgba(11,13,18,0.96); display: flex; align-items: center; gap: 12px; padding: 0 14px; color: #FAFAF7; box-sizing: border-box;">
+    <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: -0.02em;">Champ<span style="color: #FF6B35;">Preso</span></div>
+    <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1);"></div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <div style="width: 8px; height: 8px; border-radius: 50%; background: #FF6B35;"></div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px;">Drawing</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280;">11:03</div>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280;">$0.03</div>
+    <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1);"></div>
+    <button style="height: 24px; padding: 0 12px; background: transparent; border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; color: #D1D5DB; font-family: Inter, sans-serif; font-size: 12px; cursor: pointer;">End</button>
+  </div>
+
+  <!-- ============ CANVAS ============ -->
+  <div style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;">
+
+    <!-- committed -->
+    <div style="position: absolute; left: 380px; top: 150px; width: 260px; height: 86px; background: #FFE3E3; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(-0.4deg);">
+      <span style="font-family: Caveat, cursive; font-size: 22px; color: #1e1e1e; text-align: center;">Onboarding takes<br>four days</span>
+    </div>
+
+    <svg style="position: absolute; left: 640px; top: 178px;" width="180" height="30" viewBox="0 0 180 30" fill="none">
+      <path d="M4 16 C 60 10, 118 22, 170 15" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="M160 9 L172 15 L159 21" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    </svg>
+
+    <div style="position: absolute; left: 816px; top: 148px; width: 250px; height: 86px; background: #D3F9D8; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(0.3deg);">
+      <span style="font-family: Caveat, cursive; font-size: 22px; color: #1e1e1e; text-align: center;">Named owner<br>per handoff</span>
+    </div>
+
+    <!-- CANDIDATE / GHOST · dashed, 50% opacity, plus the just-changed ring -->
+    <div style="position: absolute; left: 800px; top: 320px; width: 282px; height: 118px; border: 2px solid rgba(255,107,53,0.55); border-radius: 16px;"></div>
+    <div style="position: absolute; left: 816px; top: 336px; width: 250px; height: 86px; background: #D0EBFF; border: 2px dashed #6B7280; border-radius: 10px; display: flex; align-items: center; justify-content: center; opacity: 0.5; transform: rotate(-0.6deg);">
+      <span style="font-family: Caveat, cursive; font-size: 22px; color: #1e1e1e; text-align: center;">Bundle onboarding<br>into Pro tier</span>
+    </div>
+    <div style="position: absolute; left: 1094px; top: 366px; display: inline-flex; align-items: center; gap: 5px; background: rgba(11,13,18,0.9); border-radius: 9999px; padding: 3px 10px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: #93C5FD;">
+      CANDIDATE
+    </div>
+
+    <svg style="position: absolute; left: 900px; top: 240px;" width="40" height="96" viewBox="0 0 40 96" fill="none">
+      <path d="M20 4 C 26 34, 14 62, 20 88" stroke="#6B7280" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="6 5" opacity="0.55"></path>
+      <path d="M13 80 L20 92 L27 79" stroke="#6B7280" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55"></path>
+    </svg>
+
+    <div style="position: absolute; left: 380px; top: 300px; width: 260px; height: 76px; background: #FFF3BF; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(0.5deg);">
+      <span style="font-family: Caveat, cursive; font-size: 21px; color: #1e1e1e;">Nobody owns it today</span>
+    </div>
+
+  </div>
+
+  <!-- ============ CAPTION · heard → doing ============ -->
+  <div style="position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(11,13,18,0.86); border-radius: 9999px; padding: 7px 16px; font-size: 13px; white-space: nowrap;">
+    <span style="color: #D1D5DB;">“maybe we bundle onboarding into the pro tier”</span>
+    <span style="color: #6B7280;">→</span>
+    <span style="color: #FF6B35; font-weight: 500;">sketching that as a maybe</span>
+  </div>
+
+  <!-- ============ BOTTOM DOCK · Interrupt appears because it is drawing ============ -->
+  <div style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;">
+    <button style="display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; background: rgba(11,13,18,0.94); border: 1px solid rgba(239,68,68,0.45); border-radius: 10px; color: #FCA5A5; font-family: Inter, sans-serif; font-size: 12.5px; cursor: pointer; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+      Stop
+    </button>
+    <div style="width: 520px; display: flex; align-items: center; gap: 8px; background: rgba(11,13,18,0.94); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 6px 8px 6px 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"></path></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+      <div style="flex-grow: 1; color: #6B7280; font-size: 13px;">Whisper a steer…</div>
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #2A2F3D; display: flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FAFAF7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

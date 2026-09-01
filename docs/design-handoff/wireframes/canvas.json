@@ -1,0 +1,121 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Whiteboarding — idle"
+    },
+    {
+      "file": "Gating.dc.html",
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Heard it, didn't draw it"
+    },
+    {
+      "file": "Candidate.dc.html",
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Candidate vs committed"
+    },
+    {
+      "file": "Reporting.dc.html",
+      "x": 4560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "No-op & error"
+    },
+    {
+      "file": "Prune.dc.html",
+      "x": 0,
+      "y": 1240,
+      "w": 1440,
+      "h": 900,
+      "title": "Prune branch"
+    },
+    {
+      "file": "Setup.dc.html",
+      "x": 1520,
+      "y": 1240,
+      "w": 1440,
+      "h": 900,
+      "title": "Setup — before / after"
+    },
+    {
+      "file": "Settings.dc.html",
+      "x": 3040,
+      "y": 1240,
+      "w": 1440,
+      "h": 900,
+      "title": "Settings — three questions"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -300,
+      "w": 900,
+      "text": "ChampPreso — gate, narrate, prune\n\nThe problem isn't chrome. It's that the board draws everything it hears and explains none of it.\n\nThese wireframes match the real app: tokens, type and geometry lifted from public/style.css (ink #0B0D12, ember #FF6B35, paper #F4F4F0, 40px strip, caption pill at bottom:78px). Layout is the proposal; the styling is what already ships.\n\nTop row = the four Listening states. Bottom row = the three surfaces being pruned."
+    },
+    {
+      "id": "note-idle",
+      "x": 0,
+      "y": 950,
+      "w": 1440,
+      "text": "IDLE — the state that proves the pruning.\n\nOn screen: caption (last thing heard, faded) and End. That's it. No Undo, no Interrupt, no cost drawer, no zone chip, no waveform.\n\nThe clock and the green dot stay — subtle, plain muted text, no bubble. 'Is it alive' is the complaint, and a running clock is the cheapest possible evidence."
+    },
+    {
+      "id": "note-gating",
+      "x": 1520,
+      "y": 950,
+      "w": 1440,
+      "text": "THE GATE — the Granola standard: keep everything, draw what matters.\n\nThe canvas here is pixel-identical to idle. Nothing was drawn, and the caption says so: HEARD · NOTED FOR CONTEXT.\n\nGated speech is never discarded — it buffers into the next turn's context and the session review, exactly how meeting summarizers stay accurate through off-topic wander. The gate decides WHEN to draw, never what the agent gets to know."
+    },
+    {
+      "id": "note-candidate",
+      "x": 3040,
+      "y": 950,
+      "w": 1440,
+      "text": "CANDIDATE — the board shows its own confidence.\n\nDashed border, 50% opacity, CANDIDATE tag. Solidifies when the conversation confirms it; expires on its own if the room moves on (never if you've touched or pinned it).\n\nThe ember ring is the just-changed highlight. Caption carries heard → doing. Stop appears only because it's mid-turn."
+    },
+    {
+      "id": "note-reporting",
+      "x": 4560,
+      "y": 950,
+      "w": 1440,
+      "text": "THE TWO INVISIBLE TURNS.\n\nToday a turn that draws nothing, and a turn that fails, look exactly like a turn that never happened. Both get words.\n\n'Nothing worth drawing yet' is a feature working correctly. 'The model timed out. Nothing was lost.' is a failure that doesn't make you wonder what you lost."
+    },
+    {
+      "id": "note-prune",
+      "x": 0,
+      "y": 2190,
+      "w": 1440,
+      "text": "PRUNE — kill a thread and everything under it, in one action.\n\nSelecting a node shows what would go: 3 shapes + 2 arrows, tinted crimson. readBoardStructure() already computes this graph, so 'everything downstream' is a solved problem.\n\nThe control appears on selection and nowhere else."
+    },
+    {
+      "id": "note-setup",
+      "x": 1520,
+      "y": 2190,
+      "w": 1440,
+      "text": "SETUP — 39 controls become one question.\n\nEverything on the left still exists: palette, restore, notes, mic, settings all move behind Options in the strip. Templates stay visible because they ARE the quick path.\n\nDECIDED: the button says 'Start whiteboarding', and the live state label becomes 'Whiteboarding' — this is the whiteboard that whiteboards itself, and the vocabulary plays into it."
+    },
+    {
+      "id": "note-settings",
+      "x": 3040,
+      "y": 2190,
+      "w": 1440,
+      "text": "SETTINGS — 47 keys become three questions.\n\nLeft is the default view. Right is Advanced expanded, to prove nothing was lost.\n\nThe red block is the exception to 'hide, don't remove': seven settings wired to nothing. providerFallback sat in your config promising failover that did not exist. Those get deleted, not hidden."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; }
+    a { color: #FF6B35; } a:hover { color: #FF8C5A; }
+    .q { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7; }
+    .sel { height: 38px; background: #0B0D12; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; color: #D1D5DB; font-size: 13px; }
+    .hint { font-size: 11.5px; color: #6B7280; line-height: 1.5; }
+    .lbl { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #6B7280; }
+    .row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .rk { color: #D1D5DB; font-size: 12.5px; }
+    .rv { color: #6B7280; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: #14171F; padding: 24px; box-sizing: border-box; display: flex; gap: 24px;">
+
+  <!-- ================= COLLAPSED · what you see ================= -->
+  <div style="width: 460px; flex: none; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #10B981;">DEFAULT</div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">Three questions</div>
+    </div>
+
+    <div style="flex-grow: 1; background: rgba(11,13,18,0.97); border-radius: 10px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px;">
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 20px; color: #FAFAF7; letter-spacing: -0.02em;">Settings</div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="q">How should it listen?</div>
+        <div class="sel"><span>Groq LPU · fastest, free tier</span><span style="color: #6B7280;">▾</span></div>
+        <div class="hint">Whisper on Groq silicon. Sub-second, and free for 14,400 minutes a day.</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="q">How should it draw?</div>
+        <div class="sel"><span>google/gemini-2.5-flash</span><span style="color: #6B7280;">▾</span></div>
+        <div class="hint">Fast model, because drawing happens while you are still talking.</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="q">How should it answer?</div>
+        <div class="sel"><span>anthropic/claude-sonnet-5</span><span style="color: #6B7280;">▾</span></div>
+        <div class="hint">A stronger model for questions about the board. Web search off.</div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 40px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px;">
+        <span style="color: #9CA3AF; font-size: 13px;">Advanced</span>
+        <span style="color: #6B7280; font-size: 12px;">40 more settings ›</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= EXPANDED · nothing was lost ================= -->
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #FF6B35;">ADVANCED, EXPANDED</div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">Every capability survives — one layer down</div>
+    </div>
+
+    <div style="flex-grow: 1; background: rgba(11,13,18,0.97); border-radius: 10px; padding: 20px; box-sizing: border-box; display: flex; gap: 28px;">
+
+      <div style="flex-grow: 1;">
+        <div class="lbl" style="margin-bottom: 4px;">AGENT</div>
+        <div class="row"><span class="rk">Provider</span><span class="rv">openrouter</span></div>
+        <div class="row"><span class="rk">API key</span><span class="rv">configured</span></div>
+        <div class="row"><span class="rk">Base URL</span><span class="rv">openrouter.ai/api/v1</span></div>
+        <div class="row"><span class="rk">Reasoning effort</span><span class="rv">low</span></div>
+        <div class="lbl" style="margin: 18px 0 4px;">TRANSCRIPTION</div>
+        <div class="row"><span class="rk">Model</span><span class="rv">whisper-large-v3-turbo</span></div>
+        <div class="row"><span class="rk">Smart filtering</span><span class="rv">on</span></div>
+        <div class="row"><span class="rk">Glossary</span><span class="rv">12 terms</span></div>
+        <div class="row"><span class="rk">Multiple speakers</span><span class="rv">off</span></div>
+      </div>
+
+      <div style="flex-grow: 1;">
+        <div class="lbl" style="margin-bottom: 4px;">ASK AGENT</div>
+        <div class="row"><span class="rk">Web search</span><span class="rv">off · ~$0.02/q</span></div>
+        <div class="row"><span class="rk">Knowledge base</span><span class="rv">2 folders</span></div>
+        <div class="row"><span class="rk">MCP servers</span><span class="rv">none</span></div>
+        <div class="lbl" style="margin: 18px 0 4px;">MICROPHONE</div>
+        <div class="row"><span class="rk">Device</span><span class="rv">System default</span></div>
+        <div class="lbl" style="margin: 18px 0 4px;">APPEARANCE</div>
+        <div class="row"><span class="rk">Accent</span><span class="rv">#FF6B35</span></div>
+        <div class="row"><span class="rk">Panel theme</span><span class="rv">dark</span></div>
+        <div class="row"><span class="rk">Captions</span><span class="rv">on</span></div>
+        <div class="row"><span class="rk">Onboarding ribbon</span><span class="rv">on</span></div>
+
+        <div style="margin-top: 22px; border: 1px solid rgba(239,68,68,0.35); background: rgba(239,68,68,0.08); border-radius: 8px; padding: 11px 13px;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #FCA5A5; margin-bottom: 6px;">DELETED · WIRED TO NOTHING</div>
+          <div style="color: #FCA5A5; font-size: 11.5px; line-height: 1.65; font-family: 'JetBrains Mono', monospace;">statusDensity · toggleBreathe · questionPos · backlogPosition · captionMode · providerFallback · agentMaxRetries</div>
+          <div style="color: #9CA3AF; font-size: 11px; margin-top: 7px; line-height: 1.5;">Seven controls that changed nothing. providerFallback promised failover that did not exist.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

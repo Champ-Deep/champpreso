@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; }
+    a { color: #FF6B35; } a:hover { color: #FF8C5A; }
+    .chip { border: 1px solid rgba(255,255,255,0.14); border-radius: 9999px; padding: 5px 11px; color: #D1D5DB; font-size: 11.5px; }
+    .lbl { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #6B7280; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: #14171F; padding: 24px; box-sizing: border-box; display: flex; gap: 24px;">
+
+  <!-- ================= TODAY ================= -->
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #EF4444;">TODAY</div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">39 controls before you can talk</div>
+    </div>
+
+    <div style="position: relative; flex-grow: 1; border-radius: 10px; overflow: hidden; background: #F4F4F0; background-image: radial-gradient(circle, #ECEAE4 1px, transparent 1px); background-size: 26px 26px; display: flex;">
+      <div style="width: 284px; flex: none; background: rgba(11,13,18,0.97); padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 11px; overflow: hidden;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">Champ<span style="color: #FF6B35;">Preso</span></div>
+        <div class="lbl">WHAT ARE WE WORKING ON?</div>
+        <div style="height: 74px; background: #0B0D12; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px; color: #6B7280; font-size: 11.5px;">Product brainstorm: capture the user problems we're solving…</div>
+        <div class="lbl">OR START FROM A TEMPLATE</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+          <span class="chip">Product brainstorm</span><span class="chip">Campaign planning</span>
+          <span class="chip">Team strategy</span><span class="chip">Org efficiency</span>
+          <span class="chip">Team retro</span><span class="chip">Clear</span>
+        </div>
+        <div class="lbl">CANVAS PALETTE</div>
+        <div style="display: flex; gap: 6px;">
+          <span style="width: 22px; height: 22px; border-radius: 50%; background: #FF6B35;"></span>
+          <span style="width: 22px; height: 22px; border-radius: 50%; background: #F26722;"></span>
+          <span style="width: 22px; height: 22px; border-radius: 50%; background: #06B6D4;"></span>
+          <span style="width: 22px; height: 22px; border-radius: 50%; background: #7C5CFF;"></span>
+          <span style="width: 22px; height: 22px; border-radius: 50%; background: #10B981;"></span>
+          <span style="width: 22px; height: 22px; border-radius: 50%; background: #EC4899;"></span>
+        </div>
+        <div style="height: 34px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; display: flex; align-items: center; padding: 0 10px; color: #9CA3AF; font-size: 11.5px;">Restore last session · 9 drawings</div>
+        <div style="height: 42px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 5px 10px; box-sizing: border-box;">
+          <div style="color: #FAFAF7; font-size: 12px;">Settings</div>
+          <div style="color: #6B7280; font-size: 10.5px;">Agent, transcription, mic</div>
+        </div>
+        <div style="height: 34px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; display: flex; align-items: center; padding: 0 10px; color: #9CA3AF; font-size: 11.5px;">Mic · System default</div>
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <span class="lbl">LEVEL</span>
+          <span style="width: 3px; height: 9px; background: #10B981; border-radius: 2px;"></span>
+          <span style="width: 3px; height: 13px; background: #10B981; border-radius: 2px;"></span>
+          <span style="width: 3px; height: 7px; background: #10B981; border-radius: 2px;"></span>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <div style="height: 38px; background: #FF6B35; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 13.5px;">Start Preso</div>
+      </div>
+      <div style="flex-grow: 1; display: flex; align-items: center; justify-content: center;">
+        <div style="text-align: center;">
+          <div style="font-family: Caveat, cursive; font-size: 30px; color: #9CA3AF;">Draw or paste what you have so far</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PROPOSED ================= -->
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #10B981;">PROPOSED</div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">One field, five starts, one button</div>
+    </div>
+
+    <div style="position: relative; flex-grow: 1; border-radius: 10px; overflow: hidden; background: #F4F4F0; background-image: radial-gradient(circle, #ECEAE4 1px, transparent 1px); background-size: 26px 26px;">
+      <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; background: rgba(11,13,18,0.96); display: flex; align-items: center; gap: 12px; padding: 0 14px; color: #FAFAF7; box-sizing: border-box;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: -0.02em;">Champ<span style="color: #FF6B35;">Preso</span></div>
+        <div style="flex-grow: 1;"></div>
+        <div style="display: flex; align-items: center; gap: 6px; color: #6B7280; font-size: 12px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-linecap="round"><path d="M12 19v3"></path><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path></svg>
+          Options
+        </div>
+      </div>
+
+      <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 520px; text-align: center;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 26px; color: #1A1A1A; letter-spacing: -0.02em;">What are we working on?</div>
+        <div style="margin-top: 16px; height: 48px; background: #fff; border: 1.5px solid #D1D5DB; border-radius: 10px; display: flex; align-items: center; padding: 0 16px; color: #9CA3AF; font-size: 14px; text-align: left;">Say it in a line — or pick a start below</div>
+
+        <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 7px; justify-content: center;">
+          <span style="border: 1px solid #D1D5DB; background: #fff; border-radius: 9999px; padding: 7px 14px; color: #4B5563; font-size: 12.5px;">Product brainstorm</span>
+          <span style="border: 1px solid #D1D5DB; background: #fff; border-radius: 9999px; padding: 7px 14px; color: #4B5563; font-size: 12.5px;">Campaign planning</span>
+          <span style="border: 1px solid #D1D5DB; background: #fff; border-radius: 9999px; padding: 7px 14px; color: #4B5563; font-size: 12.5px;">Team strategy</span>
+          <span style="border: 1px solid #D1D5DB; background: #fff; border-radius: 9999px; padding: 7px 14px; color: #4B5563; font-size: 12.5px;">Org efficiency</span>
+          <span style="border: 1px solid #D1D5DB; background: #fff; border-radius: 9999px; padding: 7px 14px; color: #4B5563; font-size: 12.5px;">Team retro</span>
+        </div>
+
+        <div style="margin-top: 26px; display: flex; justify-content: center;">
+          <div style="height: 46px; padding: 0 40px; background: #FF6B35; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; box-shadow: 0 8px 24px rgba(255,107,53,0.3);">Start whiteboarding</div>
+        </div>
+
+        <div style="margin-top: 14px; color: #9CA3AF; font-size: 12px;">Restore last session · 9 drawings</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

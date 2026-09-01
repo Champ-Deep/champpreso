@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; }
+    a { color: #FF6B35; } a:hover { color: #FF8C5A; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: #14171F; display: flex; flex-direction: column; gap: 24px; padding: 24px; box-sizing: border-box;">
+
+  <!-- ================= PANE 1 · THE NO-OP TURN ================= -->
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #FF6B35;">STATE 01</div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">It heard you and chose not to draw</div>
+      <div style="font-size: 12.5px; color: #6B7280;">— today this turn is completely invisible, which is half of “I can’t tell if it’s working”</div>
+    </div>
+
+    <div style="position: relative; flex-grow: 1; border-radius: 10px; overflow: hidden; background: #F4F4F0; background-image: radial-gradient(circle, #ECEAE4 1px, transparent 1px); background-size: 26px 26px;">
+      <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; background: rgba(11,13,18,0.96); display: flex; align-items: center; gap: 12px; padding: 0 14px; color: #FAFAF7; box-sizing: border-box;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: -0.02em;">Champ<span style="color: #FF6B35;">Preso</span></div>
+        <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1);"></div>
+        <div style="width: 8px; height: 8px; border-radius: 50%; background: #10B981;"></div>
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px;">Whiteboarding</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280;">12:20</div>
+        <div style="flex-grow: 1;"></div>
+        <button style="height: 24px; padding: 0 12px; background: transparent; border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; color: #D1D5DB; font-size: 12px;">End</button>
+      </div>
+
+      <div style="position: absolute; left: 500px; top: 110px; width: 240px; height: 74px; background: #FFE3E3; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(-0.4deg);">
+        <span style="font-family: Caveat, cursive; font-size: 20px; color: #1e1e1e;">Onboarding takes 4 days</span>
+      </div>
+
+      <div style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; background: rgba(11,13,18,0.86); border-radius: 9999px; padding: 7px 16px; font-size: 13px; white-space: nowrap;">
+        <div style="display: flex; align-items: center; gap: 3px;">
+          <span style="width: 4px; height: 4px; border-radius: 50%; background: #6B7280;"></span>
+          <span style="width: 4px; height: 4px; border-radius: 50%; background: #6B7280; opacity: 0.6;"></span>
+          <span style="width: 4px; height: 4px; border-radius: 50%; background: #6B7280; opacity: 0.3;"></span>
+        </div>
+        <span style="color: #9CA3AF;">Listening — nothing worth drawing yet</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PANE 2 · THE FAILED TURN ================= -->
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #FF6B35;">STATE 02</div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: #FAFAF7;">It tried and failed</div>
+      <div style="font-size: 12.5px; color: #6B7280;">— says what broke, in words, and offers the one action that helps</div>
+    </div>
+
+    <div style="position: relative; flex-grow: 1; border-radius: 10px; overflow: hidden; background: #F4F4F0; background-image: radial-gradient(circle, #ECEAE4 1px, transparent 1px); background-size: 26px 26px;">
+      <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; background: rgba(11,13,18,0.96); display: flex; align-items: center; gap: 12px; padding: 0 14px; color: #FAFAF7; box-sizing: border-box;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: -0.02em;">Champ<span style="color: #FF6B35;">Preso</span></div>
+        <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1);"></div>
+        <div style="width: 8px; height: 8px; border-radius: 50%; background: #EF4444;"></div>
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px;">Hiccup</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280;">12:24</div>
+        <div style="flex-grow: 1;"></div>
+        <button style="height: 24px; padding: 0 12px; background: transparent; border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; color: #D1D5DB; font-size: 12px;">End</button>
+      </div>
+
+      <div style="position: absolute; left: 500px; top: 110px; width: 240px; height: 74px; background: #FFE3E3; border: 1.5px solid #adb5bd; border-radius: 10px; display: flex; align-items: center; justify-content: center; transform: rotate(-0.4deg);">
+        <span style="font-family: Caveat, cursive; font-size: 20px; color: #1e1e1e;">Onboarding takes 4 days</span>
+      </div>
+
+      <div style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(11,13,18,0.9); border: 1px solid rgba(239,68,68,0.35); border-radius: 9999px; padding: 6px 8px 6px 16px; font-size: 13px; white-space: nowrap;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" stroke-width="2" stroke-linecap="round"><path d="M12 8v5"></path><path d="M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+        <span style="color: #FCA5A5;">Couldn’t draw that — the model timed out. Nothing was lost.</span>
+        <button style="height: 24px; padding: 0 11px; background: rgba(239,68,68,0.16); border: 1px solid rgba(239,68,68,0.4); border-radius: 9999px; color: #FCA5A5; font-size: 11.5px; cursor: pointer;">Try again</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
