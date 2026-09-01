@@ -33,6 +33,7 @@ import {
   OPENAI_TRANSCRIPTION_MODELS,
   MOONSHINE_MODELS,
   GROQ_TRANSCRIPTION_MODELS,
+  DEEPGRAM_TRANSCRIPTION_MODELS,
   ASK_MODELS,
   REASONING_EFFORTS,
 } from "../model-catalog.js";
@@ -133,6 +134,8 @@ function currentSttModel(settings, provider) {
     return t.openai?.model || OPENAI_TRANSCRIPTION_MODELS[0];
   if (provider === "groq")
     return t.groq?.model || GROQ_TRANSCRIPTION_MODELS[0];
+  if (provider === "deepgram")
+    return t.deepgram?.model || DEEPGRAM_TRANSCRIPTION_MODELS[0];
   return t.moonshine?.model || "medium";
 }
 
@@ -211,7 +214,9 @@ export function SetupScreen({
       ? "LOCAL TRANSCRIPTION"
       : sttProvider === "groq"
         ? "GROQ LPU TRANSCRIPTION"
-        : "CLOUD TRANSCRIPTION";
+        : sttProvider === "deepgram"
+          ? "DEEPGRAM STREAMING"
+          : "CLOUD TRANSCRIPTION";
   const readyText = warming
     ? `RE-WARMING · STILL FINE TO START · ${micLabel}`
     : `AGENT WARM · ${micLabel} · ${sttReadyLabel}`;
@@ -245,7 +250,9 @@ export function SetupScreen({
         ? "medium"
         : nextProvider === "groq"
           ? GROQ_TRANSCRIPTION_MODELS[0]
-          : OPENAI_TRANSCRIPTION_MODELS[0];
+          : nextProvider === "deepgram"
+            ? DEEPGRAM_TRANSCRIPTION_MODELS[0]
+            : OPENAI_TRANSCRIPTION_MODELS[0];
     onSaveSettings({
       transcription: { provider: nextProvider, [nextProvider]: { model: nextModel } },
     });
@@ -664,13 +671,24 @@ function SettingsSheet({
       ? MOONSHINE_MODELS
       : sttProvider === "groq"
         ? GROQ_TRANSCRIPTION_MODELS
-        : OPENAI_TRANSCRIPTION_MODELS;
+        : sttProvider === "deepgram"
+          ? DEEPGRAM_TRANSCRIPTION_MODELS
+          : OPENAI_TRANSCRIPTION_MODELS;
   const sttHelp =
     sttProvider === "moonshine"
       ? "Runs on this Mac. Free. Names come out mediocre."
       : sttProvider === "groq"
         ? "Whisper on Groq's LPU silicon. Fastest option here, and free for 14,400 minutes a day."
-        : "Cloud, low latency, nails names. Costs money per minute.";
+        : sttProvider === "deepgram"
+          ? "Streaming: captions appear while you speak, and the glossary biases names. ~$0.46/hr."
+          : "Cloud, low latency, nails names. Costs money per minute.";
+  const [deepgramKey, setDeepgramKey] = React.useState("");
+  function commitDeepgramKey() {
+    const value = deepgramKey.trim();
+    if (!value) return;
+    onSaveSettings({ apiKeys: { deepgram: value } });
+    setDeepgramKey("");
+  }
 
   return h(
     React.Fragment,
@@ -816,6 +834,7 @@ function SettingsSheet({
             { className: "ss-seg" },
             sttSegButton("Local", "free", sttProvider === "moonshine", () => onSaveSttProvider("moonshine")),
             sttSegButton("Groq LPU", "fastest", sttProvider === "groq", () => onSaveSttProvider("groq")),
+            sttSegButton("Deepgram", "streaming", sttProvider === "deepgram", () => onSaveSttProvider("deepgram")),
             sttSegButton("OpenAI", "accurate", sttProvider === "openai", () => onSaveSttProvider("openai")),
           ),
           ssField(
@@ -830,6 +849,25 @@ function SettingsSheet({
               ensureOption(sttModelOptions, sttModel).map((m) => h("option", { key: m, value: m }, m)),
             ),
           ),
+          sttProvider === "deepgram"
+            ? ssField(
+                "API key",
+                h("input", {
+                  className: "ss-select",
+                  type: "password",
+                  value: deepgramKey,
+                  placeholder: settings?.hasDeepgramKey ? "configured (enter to replace)" : "dg_...",
+                  onChange: (e) => setDeepgramKey(e.target.value),
+                  onBlur: commitDeepgramKey,
+                  onKeyDown: (e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitDeepgramKey();
+                    }
+                  },
+                }),
+              )
+            : null,
           h("div", { className: "ss-help" }, sttHelp),
         ),
 

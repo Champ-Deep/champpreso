@@ -17,6 +17,7 @@ import {
   resolveAskProviderFromSettings,
 } from "./agent-provider.js";
 import { createGroqTranscription as createDefaultGroqTranscription } from "./groq-transcription.js";
+import { createDeepgramTranscription as createDefaultDeepgramTranscription } from "./deepgram-transcription.js";
 import { createKnowledgeBase } from "./knowledge-base.js";
 import { createMcpToolset } from "./mcp-client.js";
 import { createModelCatalog } from "./model-catalog.js";
@@ -907,10 +908,12 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       openaiTranscriptionModel: settings.transcription.openai.model,
       groqTranscriptionModel: settings.transcription.groq?.model,
       groqTranscriptionBaseURL: settings.transcription.groq?.baseURL,
+      deepgramModel: settings.transcription.deepgram?.model,
       env: {
         ...(options.env ?? process.env),
         OPENAI_API_KEY: settings.apiKeys?.openai || (options.env ?? process.env).OPENAI_API_KEY,
         GROQ_API_KEY: settings.apiKeys?.groq || (options.env ?? process.env).GROQ_API_KEY,
+        DEEPGRAM_API_KEY: settings.apiKeys?.deepgram || (options.env ?? process.env).DEEPGRAM_API_KEY,
       },
     };
   }
@@ -920,6 +923,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     const provider = settings ? settings.transcription.provider : options.transcriptionProvider;
     if (provider === "openai") return createDefaultOpenAITranscription;
     if (provider === "groq") return createDefaultGroqTranscription;
+    if (provider === "deepgram") return createDefaultDeepgramTranscription;
     return createDefaultMoonshineTranscription;
   }
 
@@ -928,6 +932,9 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       if (settings.transcription.provider === "openai") return `OpenAI ${settings.transcription.openai.model}`;
       if (settings.transcription.provider === "groq") {
         return `Groq ${settings.transcription.groq?.model ?? "whisper-large-v3-turbo"}`;
+      }
+      if (settings.transcription.provider === "deepgram") {
+        return `Deepgram ${settings.transcription.deepgram?.model ?? "nova-3"}`;
       }
       return `Moonshine ${settings.transcription.moonshine.model}`;
     }
@@ -944,7 +951,9 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       ? (settings?.transcription.openai.model ?? options.openaiTranscriptionModel ?? null)
       : activeProvider === "groq"
         ? (settings?.transcription.groq?.model ?? options.groqTranscriptionModel ?? null)
-        : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
+        : activeProvider === "deepgram"
+          ? (settings?.transcription.deepgram?.model ?? options.deepgramModel ?? null)
+          : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
 
     if (current && newLabel === label) return;
 

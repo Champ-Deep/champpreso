@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // endpoint. 14,400 free minutes per day. Strong on noisy real-life audio
     // because Whisper Large v3 is the SOTA Whisper variant.
     groq: { model: "whisper-large-v3-turbo", baseURL: "https://api.groq.com/openai/v1" },
+    // Deepgram Nova-3 streaming: sub-300ms finals, interim results (live
+    // captions while you speak), keyterm prompting from the glossary.
+    deepgram: { model: "nova-3" },
   },
   // The ASK agent: a separate, more thoughtful model that answers questions
   // about the board instead of drawing on it. Deliberately independent of
@@ -64,6 +67,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     openrouter: "",
     groq: "",
     cerebras: "",
+    deepgram: "",
   },
   agentInstructions: "",
   // Notes and transcripts. Free-form reference material the user drops into
@@ -157,6 +161,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
       hasOpenRouterKey: Boolean(apiKeys?.openrouter),
       hasGroqKey: Boolean(apiKeys?.groq),
       hasCerebrasKey: Boolean(apiKeys?.cerebras),
+      hasDeepgramKey: Boolean(apiKeys?.deepgram),
     };
   }
 
@@ -190,6 +195,9 @@ function seedFromEnv(settings, env, readCodexAuth) {
 
   const groqKey = trimOrEmpty(env.GROQ_API_KEY);
   if (groqKey) next.apiKeys.groq = groqKey;
+
+  const deepgramKey = trimOrEmpty(env.DEEPGRAM_API_KEY);
+  if (deepgramKey) next.apiKeys.deepgram = deepgramKey;
   const groqModel = trimOrEmpty(env.GROQ_MODEL);
   if (groqModel) next.agent.groq.model = groqModel;
 
@@ -237,7 +245,10 @@ function seedFromEnv(settings, env, readCodexAuth) {
   else if (ollamaModel) next.agent.provider = "ollama";
   else next.agent.provider = "openai";
 
-  if (openaiKey) next.transcription.provider = "openai";
+  // First-run STT preference: Deepgram streaming when a key is present
+  // (best latency + live captions), else OpenAI Realtime, else Moonshine.
+  if (deepgramKey) next.transcription.provider = "deepgram";
+  else if (openaiKey) next.transcription.provider = "openai";
 
   return next;
 }

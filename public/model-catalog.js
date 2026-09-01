@@ -66,3 +66,6 @@ export const ASK_MODELS = [
   "deepseek/deepseek-v4-pro",
   "x-ai/grok-4.6",
 ];
+
+// Deepgram streaming models (static: no public list endpoint to poll).
+export const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3", "nova-2"];

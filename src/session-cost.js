@@ -35,6 +35,11 @@ export const TRANSCRIPTION_PRICING = {
     "whisper-large-v3":       0.111 / 60,
     "distil-whisper-large-v3-en": 0.02 / 60,
   },
+  // Deepgram streaming list pricing (pay-as-you-go).
+  deepgram: {
+    "nova-3": 0.0077,
+    "nova-2": 0.0059,
+  },
 };
 
 export function computeAgentCost({ provider, model, usage }) {
