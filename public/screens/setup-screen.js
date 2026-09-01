@@ -313,16 +313,6 @@ export function SetupScreen({
     api.updateScene({ elements: [...kept, ...skeleton] });
     try {
       api.scrollToContent?.(skeleton, { fitToViewport: true, viewportZoomFactor: 0.75 });
-      // scrollToContent centers on the full window, but the setup rail covers
-      // the left ~284px - shift the content right by half the rail so it
-      // centers within the visible canvas area instead (same correction the
-      // .setup-canvas-hint CSS makes). Deferred so the fit commits first.
-      setTimeout(() => {
-        const appState = api.getAppState?.();
-        if (!appState) return;
-        const zoom = appState.zoom?.value ?? 1;
-        api.updateScene({ appState: { scrollX: appState.scrollX + 142 / zoom } });
-      }, 60);
     } catch {
       /* older Excalidraw builds without scrollToContent options: non-fatal */
     }
@@ -342,157 +332,114 @@ export function SetupScreen({
   return h(
     React.Fragment,
     null,
-    // Empty-canvas hint (design showCanvasHint). Non-interactive overlay.
-    canvasEmpty
-      ? h(
-          "div",
-          { className: "setup-canvas-hint", "aria-hidden": "true" },
-          h("div", { className: "sch-lead" }, "Draw or paste what you have so far"),
-          h(
-            "div",
-            { className: "sch-sub" },
-            "Whatever is on this canvas when you start becomes the agent's starting state. Blank is fine too.",
-          ),
-        )
-      : null,
 
-    // ============ SETUP RAIL ============
+    // ============ TOP STRIP (mirrors the live Whiteboarding strip) ============
     h(
       "div",
-      { className: "setup-rail" },
+      { className: "setup-strip" },
       h(
         "div",
         { className: "setup-brand" },
         "Champ",
         h("span", { className: "setup-brand-mark" }, "Preso"),
       ),
-      h("div", { className: "setup-eyebrow" }, "NEW SESSION"),
-
-      h(
-        "div",
-        { className: "setup-intent" },
-        h("label", { htmlFor: "setup-intent-input" }, "Where should this conversation land?"),
-        h("textarea", {
-          id: "setup-intent-input",
-          value: agentInstructions ?? "",
-          onChange: (e) => onAgentInstructionsChange?.(e.target.value),
-          placeholder: "Get to a concrete Q3 plan for Lake Stream",
-          spellCheck: true,
-        }),
-        h(
-          "div",
-          { className: "setup-intent-hint" },
-          "The intent steers what gets drawn. A goal converges the canvas. A question maps it.",
-        ),
-        h(
-          "div",
-          { className: "setup-templates-label" },
-          "OR START FROM A TEMPLATE",
-        ),
-        h(
-          "div",
-          { className: "setup-intent-templates" },
-          BRAINSTORM_TEMPLATES.map((template) =>
-            h(
-              "button",
-              {
-                key: template.id,
-                type: "button",
-                className: `setup-intent-template${activeTemplateId === template.id ? " active" : ""}`,
-                title: template.tagline,
-                onClick: () => applyTemplate(template),
-              },
-              template.label,
-            ),
-          ),
-          agentInstructions || activeTemplateId
-            ? h(
-                "button",
-                {
-                  type: "button",
-                  className: "setup-intent-template setup-intent-template-clear",
-                  onClick: clearTemplate,
-                },
-                "Clear",
-              )
-            : null,
-        ),
-      ),
-
-      h(
-        "label",
-        { className: "setup-check" },
-        h("input", {
-          type: "checkbox",
-          checked: multiSpeaker,
-          onChange: toggleMulti,
-        }),
-        "Multiple speakers",
-      ),
-
-      h(
-        "div",
-        { className: "setup-restore-group" },
-        h(
-          "button",
-          {
-            type: "button",
-            className: "setup-ghost-btn",
-            onClick: restoreSession,
-            disabled: restoring,
-          },
-          restoreIcon(),
-          restoring ? "Restoring…" : "Restore last session",
-        ),
-        // Always rendered (space reserved via CSS min-height even when
-        // empty) rather than only mounted once there's text - a
-        // conditionally-mounted sibling here pushed the Settings button
-        // (and everything after it) down every time a restore result
-        // appeared, which read as the whole rail "glitching" on restore.
-        h(
-          "div",
-          {
-            className: `setup-restored${restoredText ? " visible" : ""}${/failed|no saved/i.test(restoredText) ? " err" : ""}`,
-          },
-          restoredText,
-        ),
-      ),
-
+      h("div", { className: "setup-strip-spacer" }),
       h(
         "button",
         {
           type: "button",
-          className: "setup-ghost-btn",
+          className: "setup-options-btn",
           onClick: () => setSettingsOpen(true),
+          title: "Everything else: agent, transcription, mic, seeding, appearance",
         },
         settingsIcon(),
-        h(
-          "span",
-          { className: "setup-ghost-btn-text" },
-          h("span", { className: "setup-ghost-btn-title" }, "Settings"),
-          h("span", { className: "setup-ghost-btn-sub" }, "Agent, transcription, mic"),
-        ),
+        "Options",
       ),
+    ),
 
-      h("div", { className: "setup-spacer" }),
-
-      h(SeedArea, { excalidrawApi }),
-
+    // ============ THE ONE QUESTION ============
+    // Centered while the canvas is empty; docks to the bottom edge once the
+    // canvas has content so nothing covers the user's drawing. Everything the
+    // old 39-control rail held still exists - it lives behind Options.
+    h(
+      "div",
+      { className: `sq-card${canvasEmpty ? "" : " sq-docked"}` },
+      h("div", { className: "sq-title" }, "What are we working on?"),
+      h("input", {
+        className: "sq-input",
+        type: "text",
+        value: agentInstructions ?? "",
+        onChange: (e) => onAgentInstructionsChange?.(e.target.value),
+        placeholder: "Say it in a line — or pick a start below",
+        spellCheck: true,
+        "aria-label": "What are we working on?",
+      }),
+      h(
+        "div",
+        { className: "sq-chips" },
+        BRAINSTORM_TEMPLATES.map((template) =>
+          h(
+            "button",
+            {
+              key: template.id,
+              type: "button",
+              className: `sq-chip${activeTemplateId === template.id ? " active" : ""}`,
+              title: template.tagline,
+              onClick: () => applyTemplate(template),
+            },
+            template.label,
+          ),
+        ),
+        agentInstructions || activeTemplateId
+          ? h(
+              "button",
+              { type: "button", className: "sq-chip sq-chip-clear", onClick: clearTemplate },
+              "Clear",
+            )
+          : null,
+      ),
       h(
         "button",
         {
           type: "button",
-          className: "setup-start",
+          className: "setup-start sq-start",
           onClick: startListening,
           disabled: starting,
         },
         starting ? "Starting…" : "Start whiteboarding",
       ),
-
-      readinessGlyph(),
+      readinessGlyph("sq-ready"),
+      h(
+        "div",
+        { className: "sq-restore" },
+        h(
+          "button",
+          {
+            type: "button",
+            className: "sq-restore-btn",
+            onClick: restoreSession,
+            disabled: restoring,
+          },
+          restoring ? "Restoring…" : "Restore last session",
+        ),
+        restoredText
+          ? h(
+              "span",
+              { className: `sq-restored${/failed|no saved/i.test(restoredText) ? " err" : ""}` },
+              restoredText,
+            )
+          : null,
+      ),
+      canvasEmpty
+        ? h(
+            "div",
+            { className: "sq-hint" },
+            "Or draw straight on the canvas — whatever is there when you start becomes the agent's starting state.",
+          )
+        : null,
     ),
 
-    // ============ SETTINGS SHEET ============
+    // ============ OPTIONS (settings sheet) ============
     settingsOpen
       ? h(SettingsSheet, {
           settings,
@@ -510,6 +457,11 @@ export function SetupScreen({
           onSaveSttModel: saveSttModel,
           onPatchUiPref,
           readiness: readinessGlyph("in-sheet"),
+          excalidrawApi,
+          agentInstructions,
+          onAgentInstructionsChange,
+          multiSpeaker,
+          onToggleMulti: toggleMulti,
           onClose: () => setSettingsOpen(false),
         })
       : null,
@@ -598,6 +550,11 @@ function SeedArea({ excalidrawApi }) {
 // ---- Settings sheet -----------------------------------------------------
 function SettingsSheet({
   settings,
+  excalidrawApi,
+  agentInstructions,
+  onAgentInstructionsChange,
+  multiSpeaker,
+  onToggleMulti,
   agentProvider,
   agentModel,
   sttProvider,
@@ -717,6 +674,41 @@ function SettingsSheet({
       h(
         "div",
         { className: "ss-body" },
+
+        // ---- SESSION ----
+        // Migrated from the old setup rail: the one-line question on the card
+        // is the short form; this is the long form plus session toggles.
+        h(
+          "section",
+          { className: "ss-group" },
+          h("div", { className: "ss-group-label" }, "SESSION"),
+          ssField(
+            "Agent instructions",
+            h("textarea", {
+              className: "ss-select ss-textarea",
+              value: agentInstructions ?? "",
+              onChange: (e) => onAgentInstructionsChange?.(e.target.value),
+              placeholder: "Longer-form direction for the whole session…",
+              spellCheck: true,
+            }),
+          ),
+          ssField(
+            "Multiple speakers",
+            h(
+              "label",
+              { className: "ss-check" },
+              h("input", {
+                type: "checkbox",
+                checked: Boolean(multiSpeaker),
+                onChange: onToggleMulti,
+              }),
+              h("span", null, multiSpeaker ? "On" : "Off"),
+            ),
+          ),
+          h(SeedArea, { excalidrawApi }),
+        ),
+
+        h("div", { className: "ss-divider" }),
 
         // ---- AGENT ----
         h(
