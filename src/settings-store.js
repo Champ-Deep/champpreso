@@ -49,6 +49,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     mcpServers: [],
     maxIndexChars: 2_000_000,
   },
+  // Salience gate: a fast Groq classifier that decides WHEN a transcript
+  // chunk fires a drawing turn (chaff buffers as context instead of drawing).
+  // Fail-open by design; requires apiKeys.groq to actually engage.
+  gate: {
+    enabled: true,
+  },
   apiKeys: {
     openai: "",
     openrouter: "",

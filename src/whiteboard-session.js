@@ -3,6 +3,7 @@ import { WebSocket } from "ws";
 import { createSessionCostTracker } from "./session-cost.js";
 import { createTranscriptTurnQueue } from "./transcript-turn-queue.js";
 import { cleanTranscript, explainRejection } from "./transcript-hygiene.js";
+import { maxSalience } from "./salience-gate.js";
 
 const FILLER_WORDS = new Set([
   "uh", "uhh", "uhhh", "um", "umm", "ummm", "ah", "ahh", "er", "erm",
@@ -155,6 +156,8 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
       if (!mySession.active) return;
       state.agentBusy = true;
       publishAgentStatus();
+      state.turnSalience = state.nextTurnSalience ?? null;
+      state.nextTurnSalience = null;
       state.turnIdCounter = (state.turnIdCounter || 0) + 1;
       const turnId = `turn-${state.turnIdCounter}-${Date.now()}`;
       broadcast(wss, { type: "agent:turn-start", turnId, transcript, timestamp: new Date().toISOString() });
@@ -184,7 +187,49 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   // Inspired by Mega-ASR's semantic recovery principle.
   state.smartSttEnabled = true;
   state.smartSttLog = { dropped: 0, lastReason: null, lastDropped: "" };
-  state.queueTranscript = (text) => {
+  // ---- salience gate (see docs/superpowers/specs/2026-09-01-gate-narrate-prune-design.md) ----
+  // Gated ("chaff") chunks buffer here and ride along as context on the next
+  // salient turn - the gate decides WHEN to draw, never what the agent knows.
+  state.pendingGateContext = [];
+  // Salience folded into the NEXT queued turn (max over its chunks), and the
+  // salience of the turn currently running (read by the message builder).
+  state.nextTurnSalience = null;
+  state.turnSalience = null;
+  // Serialize routing so chunks land in arrival order even when a later
+  // classification resolves before an earlier one.
+  let gateChain = Promise.resolve();
+  const GATE_CONTEXT_MAX_CHARS = 1500;
+  const GATE_SALIENCE = new Set(["chaff", "hypothesis", "decision"]);
+
+  function pushGateContext(text) {
+    state.pendingGateContext.push(text);
+    let total = state.pendingGateContext.reduce((n, t) => n + t.length, 0);
+    while (total > GATE_CONTEXT_MAX_CHARS && state.pendingGateContext.length > 1) {
+      total -= state.pendingGateContext.shift().length;
+    }
+  }
+
+  function flushGateContextInto(text) {
+    if (state.pendingGateContext.length === 0) return text;
+    const ctx = state.pendingGateContext.join(" ");
+    state.pendingGateContext = [];
+    return `(kept for context, not yet drawn: "${ctx}")\n${text}`;
+  }
+
+  function enqueueWithSalience(text, salience) {
+    if (salience) state.nextTurnSalience = maxSalience(state.nextTurnSalience, salience);
+    return queue.enqueue(flushGateContextInto(text));
+  }
+
+  function withGateTimeout(promise, ms) {
+    let timer = null;
+    return Promise.race([
+      promise,
+      new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); }),
+    ]).finally(() => clearTimeout(timer));
+  }
+
+  state.queueTranscript = (text, { bypassGate = false } = {}) => {
     if (!state.smartSttEnabled) return queue.enqueue(text);
     const reason = explainRejection(text);
     if (reason) {
@@ -196,14 +241,54 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     }
     const cleaned = cleanTranscript(text);
     if (!cleaned) return Promise.resolve();
-    return queue.enqueue(cleaned);
+    const classify = options?.classifySalience;
+    // No classifier -> legacy behaviour, byte for byte. Bypass -> the user
+    // typed it on purpose (typed turn, scoped edit, retry); gating it would be
+    // insubordinate. Trivial filler -> the queue's isReady gate handles it for
+    // free. Staging mode -> turns don't run anyway; don't burn a classify call.
+    if (!classify || bypassGate || state.mode !== "live" || isTrivialTranscript(cleaned)) {
+      return enqueueWithSalience(cleaned, classify && bypassGate ? "decision" : null);
+    }
+    const mySession = state.session;
+    const routed = gateChain.then(async () => {
+      // Fail-open default is "decision" (committed): a broken gate must never
+      // mute the product, and mistakenly-provisional content could later
+      // auto-expire - failing toward committed can only cost clutter.
+      let salience = "decision";
+      try {
+        const verdict = await withGateTimeout(
+          classify({
+            transcript: cleaned,
+            sessionIntent: state.agentInstructions ?? "",
+            recentContext: state.pendingGateContext.join(" "),
+          }),
+          options?.gateTimeoutMs ?? 1500,
+        );
+        if (verdict && GATE_SALIENCE.has(verdict.salience)) salience = verdict.salience;
+      } catch { /* fail open */ }
+      if (!mySession.active) return;
+      if (salience === "chaff") {
+        pushGateContext(cleaned);
+        broadcast(wss, {
+          type: "salience:noted",
+          text: cleaned.slice(0, 200),
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      return enqueueWithSalience(cleaned, salience);
+    });
+    gateChain = routed.catch(() => {});
+    return routed;
   };
   state.setSmartStt = (enabled) => {
     state.smartSttEnabled = !!enabled;
     broadcast(wss, { type: "stt:smart-mode", enabled: state.smartSttEnabled });
     return state.smartSttEnabled;
   };
-  state.idle = () => queue.idle();
+  // idle() drains gate routing first, then the turn queue - so callers (and
+  // tests) can await "everything queued so far has fully landed".
+  state.idle = () => gateChain.then(() => queue.idle());
   state.endSession = () => {
     state.session.active = false;
     state.session = { id: state.session.id + 1, active: true };
@@ -215,6 +300,9 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.interruptSignal = { aborted: false, reason: null };
     state.recentToolSignatures = [];
     state.pinnedIds = new Set();
+    state.pendingGateContext = [];
+    state.nextTurnSalience = null;
+    state.turnSalience = null;
   };
   state.updateLatestScreenshot = (image) => {
     state.latestScreenshot = image;

@@ -28,6 +28,7 @@ import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
 import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "./whiteboard-elements.js";
 import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
+import { createSalienceClassifier } from "./salience-gate.js";
 import {
   applyWhiteboardEditOperations,
   formatLineNumberedWhiteboard,
@@ -106,6 +107,40 @@ export async function startServer(options) {
 
   const httpServer = createHttpServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  // Salience gate default wiring. options.classifySalience is set (or
+  // cleared) from settings at boot and again on every settings save, so a
+  // Groq key added or the gate toggled mid-run takes effect without a
+  // restart - while keyless/disabled setups keep today's fully synchronous
+  // enqueue path (options.classifySalience stays undefined). Reads ONLY the
+  // settings store / options.env - never process.env directly - so test runs
+  // in a shell that exports GROQ_API_KEY stay network-free.
+  const injectedClassifySalience = options.classifySalience;
+  let cachedSalienceClassifier = null;
+  let cachedSalienceKey = null;
+  async function refreshSalienceClassifier() {
+    if (injectedClassifySalience) return; // tests own the seam
+    if (!options.settingsStore) return;
+    const settings = await options.settingsStore.load();
+    const enabled = settings?.gate?.enabled !== false;
+    const apiKey = settings?.apiKeys?.groq || options.env?.GROQ_API_KEY || "";
+    if (!enabled || !apiKey) {
+      options.classifySalience = undefined;
+      cachedSalienceClassifier = null;
+      cachedSalienceKey = null;
+      return;
+    }
+    if (!cachedSalienceClassifier || cachedSalienceKey !== apiKey) {
+      cachedSalienceClassifier = createSalienceClassifier({
+        apiKey,
+        fetchImpl: options.salienceFetch ?? globalThis.fetch,
+      });
+      cachedSalienceKey = apiKey;
+    }
+    options.classifySalience = cachedSalienceClassifier;
+  }
+  await refreshSalienceClassifier();
+
   const state = createWhiteboardSession({
     options,
     wss,
@@ -410,7 +445,7 @@ export async function startServer(options) {
       return res.status(400).json({ error: "Selected elements are not on the current canvas." });
     }
     state.setScopedEdit({ selectedIds, lineNumbers, instruction });
-    state.queueTranscript(instruction);
+    state.queueTranscript(instruction, { bypassGate: true });
     res.json({ ok: true, selectedIds, lineNumbers, instruction });
   });
   // v0.15.0: typed turn. A no-voice path to capture an idea and have the agent
@@ -424,7 +459,7 @@ export async function startServer(options) {
     if (!text) {
       return res.status(400).json({ error: "Text required." });
     }
-    state.queueTranscript(text);
+    state.queueTranscript(text, { bypassGate: true });
     res.json({ ok: true, text });
   });
 
@@ -617,6 +652,7 @@ Extract the concrete decisions this group actually made (not aspirations, not op
     try {
       await options.settingsStore.save(req.body ?? {});
       await transcription.applyCurrent();
+      await refreshSalienceClassifier();
       const sanitized = await options.settingsStore.getSanitized();
       // Knowledge-base folders may have changed; rebuild the index lazily so
       // the next ask reads the new configuration without a server restart.
@@ -701,6 +737,7 @@ Extract the concrete decisions this group actually made (not aspirations, not op
         try {
           await options.settingsStore.save(message.patch ?? {});
           await transcription.applyCurrent();
+          await refreshSalienceClassifier();
           const sanitized = await options.settingsStore.getSanitized();
           broadcast(wss, { type: "settings", settings: sanitized });
           broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });

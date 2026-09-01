@@ -47,7 +47,9 @@ Sits inside `state.queueTranscript` after transcript hygiene, before `queue.enqu
   buys nothing here, and the key already exists for Whisper. The classifier is injectable
   (`options.classifySalience`) for tests and future rerouting.
 - **Fail-open, always**: classifier error, timeout (1500ms), or no Groq key → treat as
-  `hypothesis` and proceed exactly as today. A broken gate must never mute the product.
+  `decision` (committed) and proceed exactly as today. Failing toward committed can only
+  cost clutter; failing toward candidate could auto-expire real content later. A broken
+  gate must never mute the product.
 - **Bypass** for typed turns (`/api/session/say`), scoped edits, and seeding — the user
   typed it on purpose; gating it would be insubordinate.
 - The winning salience for a turn (max over the chunks folded into it;
